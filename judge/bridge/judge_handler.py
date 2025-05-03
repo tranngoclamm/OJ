@@ -55,6 +55,8 @@ class JudgeHandler(ZlibPacketHandler):
             'supported-problems': self.on_supported_problems,
             'executors': self.on_executors,
             'handshake': self.on_handshake,
+            'testcase-ide': self.on_test_case_ide,
+
         }
         self._working = False
         self._no_response_job = None
@@ -237,6 +239,32 @@ class JudgeHandler(ZlibPacketHandler):
         data = self.get_related_submission_data(id)
         self._working = id
         self._no_response_job = threading.Timer(20, self._kill_if_no_response)
+        is_ide_mode = problem == 'run_ide'
+        ide_input = ''
+        if is_ide_mode:
+            try:
+                before_code, _, after_code = source.partition("###CODE###")
+                _, _, input_part = before_code.partition("###INPUT###")
+                input_part = input_part.strip()
+                code_part = after_code.strip()
+
+                ide_input = input_part
+                source = code_part
+            except Exception as e:
+                logger.error(f'Lỗi tách input/code: {e}')
+        
+        meta_data = {
+            'pretests-only': data.pretests_only,
+            'in-contest': data.contest_no,
+            'attempt-no': data.attempt_no,
+            'user': data.user_id,
+            'file-only': data.file_only,
+            'file-size-limit': data.file_size_limit,
+        }
+
+        if is_ide_mode:
+            meta_data['ide_input'] = ide_input
+        
         self.send({
             'name': 'submission-request',
             'submission-id': id,
@@ -246,14 +274,7 @@ class JudgeHandler(ZlibPacketHandler):
             'time-limit': data.time,
             'memory-limit': data.memory,
             'short-circuit': data.short_circuit,
-            'meta': {
-                'pretests-only': data.pretests_only,
-                'in-contest': data.contest_no,
-                'attempt-no': data.attempt_no,
-                'user': data.user_id,
-                'file-only': data.file_only,
-                'file-size-limit': data.file_size_limit,
-            },
+            'meta': meta_data,
         })
 
     def _kill_if_no_response(self):
@@ -366,9 +387,8 @@ class JudgeHandler(ZlibPacketHandler):
     def on_grading_begin(self, packet):
         logger.info('%s: Grading has begun on: %s', self.name, packet['submission-id'])
         self.batch_id = None
-
         if Submission.objects.filter(id=packet['submission-id']).update(
-                status='G', is_pretested=packet['pretested'], current_testcase=1,
+                status='G', is_pretested=False, current_testcase=1,
                 batch=False, judged_date=timezone.now()):
             SubmissionTestCase.objects.filter(submission_id=packet['submission-id']).delete()
             event.post('sub_%s' % Submission.get_id_secret(packet['submission-id']), {'type': 'grading-begin'})
@@ -467,6 +487,8 @@ class JudgeHandler(ZlibPacketHandler):
 
         if Submission.objects.filter(id=packet['submission-id']).update(status='CE', result='CE', error=packet['log']):
             event.post('sub_%s' % Submission.get_id_secret(packet['submission-id']), {'type': 'compile-error'})
+            event.post('sub_%s' % Submission.get_id_secret(packet['submission-id']), {'type': 'ide-compile-error', 'msg': packet})
+
             self._post_update_submission(packet['submission-id'], 'compile-error', done=True)
             json_log.info(self._make_json_log(packet, action='compile-error', log=packet['log'],
                                               finish=True, result='CE'))
@@ -534,7 +556,6 @@ class JudgeHandler(ZlibPacketHandler):
 
     def on_test_case(self, packet, max_feedback=SubmissionTestCase._meta.get_field('feedback').max_length):
         logger.info('%s: %d test case(s) completed on: %s', self.name, len(packet['cases']), packet['submission-id'])
-
         id = packet['submission-id']
         updates = packet['cases']
         max_position = max(map(itemgetter('position'), updates))
@@ -606,7 +627,17 @@ class JudgeHandler(ZlibPacketHandler):
 
         if do_post:
             event.post('sub_%s' % Submission.get_id_secret(id), {'type': 'test-case'})
+            event.post('sub_%s' % Submission.get_id_secret(id),{'type': 'on_test_case_ide2', 'result': packet})
             self._post_update_submission(id, state='test-case')
+
+    def on_test_case_ide(self, packet):
+        self.in_batch = False
+        #logger.info('%s: Testcase IDE on: %s', self.name, packet['result'])
+        event.post('sub_%s' % Submission.get_id_secret(packet['result']['current_submission_id']
+),{'type': 'on_test_case_ide', 'result': packet})
+
+        json_log.info(self._make_json_log(packet, action='batch-end', batch=self.batch_id))
+
 
     def on_malformed(self, packet):
         logger.error('%s: Malformed packet: %s', self.name, packet)

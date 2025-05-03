@@ -1,0 +1,4 @@
+archive: aplusb.zip
+test_cases:
+- {in: aplusb.1.in, out: aplusb.1.out, points: 5}
+

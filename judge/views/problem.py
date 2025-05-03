@@ -5,6 +5,8 @@ import re
 from datetime import timedelta
 from operator import itemgetter
 from random import randrange
+import threading
+import time
 
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
@@ -44,9 +46,18 @@ from judge.utils.tickets import own_ticket_filter
 from judge.utils.views import QueryStringSortMixin, SingleObjectFormView, TitleMixin, add_file_response, generic_message
 from judge.views.widgets import pdf_statement_uploader, submission_uploader
 
+from django.http import JsonResponse
+
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+
+from judge.judgeapi import judge_request
+from judge.bridge.judge_list import JudgeList
+import websocket 
 recjk = re.compile(r'[\u2E80-\u2E99\u2E9B-\u2EF3\u2F00-\u2FD5\u3005\u3007\u3021-\u3029\u3038-\u303A\u303B\u3400-\u4DB5'
                    r'\u4E00-\u9FC3\uF900-\uFA2D\uFA30-\uFA6A\uFA70-\uFAD9\U00020000-\U0002A6D6\U0002F800-\U0002FA1D]')
 
+logger = logging.getLogger(__name__)
 
 def get_contest_problem(problem, profile):
     try:
@@ -164,6 +175,9 @@ class ProblemRaw(ProblemMixin, TitleMixin, TemplateResponseMixin, SingleObjectMi
                 object=self.object,
             ))
 
+from judge.models.exam_access import ExamAccess
+from django.conf import settings
+from django.shortcuts import render
 
 class ProblemDetail(ProblemMixin, SolvedProblemMixin, CommentedDetailView):
     context_object_name = 'problem'
@@ -244,7 +258,26 @@ class ProblemDetail(ProblemMixin, SolvedProblemMixin, CommentedDetailView):
         context['meta_description'] = self.object.summary or metadata[0]
         context['og_image'] = self.object.og_image or metadata[1]
         return context
+  
+    def dispatch(self, request, *args, **kwargs):
+        # Chỉ áp dụng nếu user đang đăng nhập và contest là kỳ thi đặc biệt
+        user = request.user
+        print("user264: ", user)
+        if user.is_authenticated:
+            problem = self.get_object()
+            print("user.is_authenticated!")
+            if ExamAccess.objects.filter(problem_id=problem.id, user_id=user.id).exists():
+                # Kỳ thi đặc biệt → yêu cầu header SEB
+                print("is exam access!")
+                seb_key = request.headers.get('X-SafeExamBrowser-RequestHash')
+                seb_keys = getattr(settings, 'SEB_BROWSER_KEYS', [])
+                
+                print("📋 SEB_BROWSER_KEYS từ local_settings.py:", seb_keys)
+                print("📩 SEB Key từ Header:", seb_key)
+                if not seb_key or seb_key not in getattr(settings, 'SEB_BROWSER_KEYS', []):
+                    return render(request, 'errors/seb_forbidden.html', status=403)
 
+        return super().dispatch(request, *args, **kwargs)
 
 class LatexError(Exception):
     pass
@@ -682,7 +715,6 @@ class ProblemSubmit(LoginRequiredMixin, ProblemMixin, TitleMixin, SingleObjectFo
 
         with transaction.atomic():
             self.new_submission = form.save(commit=False)
-
             contest_problem = self.contest_problem
             if contest_problem is not None:
                 # Use the contest object from current_contest.contest because we already use it
@@ -1071,3 +1103,112 @@ class ProblemEditTypeGroup(PermissionRequiredMixin, ProblemMixin, TitleMixin, Up
             return HttpResponseRedirect(reverse('problem_detail', args=[self.object.code]))
 
         return self.render_to_response(self.get_context_data(object=self.object))
+        
+
+@method_decorator(csrf_exempt, name='dispatch')
+class RunCodeView(View):
+    def post(self, request):
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Unauthenticated'}, status=401)
+
+        try:
+            data = json.loads(request.body)
+            language = Language.objects.get(key=data['language'])  
+            stdin = data.get('stdin', '')
+            source_code = '###INPUT###\n' + stdin + '###CODE###\n' + data['source'] 
+
+            judge_name = data.get('judge')
+
+            problem = get_object_or_404(Problem, code="run_ide")
+            profile = request.profile
+
+            # Check banned
+            if not request.user.is_superuser and problem.banned_users.filter(id=profile.id).exists():
+                return JsonResponse({'error': _('You are banned from submitting to this problem.')}, status=403)
+
+            current_contest = profile.current_contest
+            contest_problem = get_contest_problem(problem, profile) if current_contest else None
+
+            with transaction.atomic():
+                submission = Submission(user=profile, problem=problem, language=language)
+                if contest_problem:
+                    submission.contest_object = current_contest.contest
+                    if current_contest.live:
+                        submission.locked_after = submission.contest_object.locked_after
+                    submission.save()
+                    ContestSubmission(
+                        submission=submission,
+                        problem=contest_problem,
+                        participation=current_contest,
+                    ).save()
+                else:
+                    submission.save()
+
+                source_url = ''
+                source = SubmissionSource(submission=submission, source=source_code + source_url)
+                source.save()
+
+            submission.source = source
+            submission.judge(force_judge=True, judge_id="")
+
+
+            # IP log nếu trong official contest
+            if settings.VNOJ_OFFICIAL_CONTEST_MODE:
+                ip = request.META['REMOTE_ADDR']
+                user_submit_ip_logger.info(
+                    '%s,%s,%s',
+                    request.user.username,
+                    ip,
+                    submission.problem.code,
+                )
+
+            return JsonResponse({
+                'message': _('Submission successful'),
+                'submission_id': submission.id,
+                'channel': f"sub_{submission.id_secret}",
+            })
+
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        except Language.DoesNotExist:
+            return JsonResponse({'error': _('Invalid language')}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+def wait_for_result(channel, timeout=10):
+    result_data = {}
+    done_event = threading.Event()
+
+    def on_message(ws, message):
+        msg = json.loads(message)
+        if msg.get('message', {}).get('type') == 'on_test_case_ide':
+            result_data.update(msg['message']['result'])  
+            done_event.set()
+            ws.close()
+            return msg
+    
+
+    def on_open(ws):
+        ws.send(json.dumps({
+            'command': 'set-filter',
+            'filter': [channel]
+        }))
+
+    def on_error(ws, error):
+        done_event.set()
+        ws.close()
+
+    def on_close(ws, close_status_code, close_msg):
+        ws.close()
+
+    ws = websocket.WebSocketApp(
+        "ws://127.0.0.1:15100/",
+        on_message=on_message,
+        on_open=on_open,
+        on_error=on_error,
+        on_close=on_close
+    )
+
+    thread = threading.Thread(target=ws.run_forever)
+    thread.daemon = True
+    thread.start()

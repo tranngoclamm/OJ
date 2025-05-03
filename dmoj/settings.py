@@ -17,6 +17,9 @@ from django_jinja.builtins import DEFAULT_EXTENSIONS
 from jinja2 import select_autoescape
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+COMPRESS_ROOT = STATIC_ROOT
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.2/howto/deployment/checklist/

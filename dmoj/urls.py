@@ -27,6 +27,7 @@ from judge.views.select2 import AssigneeSelect2View, CommentSelect2View, Contest
     TagGroupSelect2View, TagSelect2View, TicketUserSelect2View, UserSearchSelect2View, UserSelect2View
 from judge.views.widgets import martor_image_uploader
 
+
 admin.autodiscover()
 
 SEND_ACTIVATION_EMAIL = getattr(settings, 'SEND_ACTIVATION_EMAIL', True)
@@ -107,6 +108,8 @@ urlpatterns = [
     path('i18n/', include('django.conf.urls.i18n')),
     path('accounts/', include(register_patterns)),
     path('', include('social_django.urls')),
+    path('problem/run_code', problem.RunCodeView.as_view(), name='problem_run_code'),
+    path('download/account-docx/', contests.download_account_docx, name='download_account_docx'),
 
     path('problems', include([
         path('/', problem.ProblemList.as_view(), name='problem_list'),

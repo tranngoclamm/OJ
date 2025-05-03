@@ -15,6 +15,8 @@ from judge.models.problem import Problem, SubmissionSourceAccess
 from judge.models.profile import Profile
 from judge.models.runtime import Language
 from judge.utils.unicode import utf8bytes
+import logging
+logger = logging.getLogger(__name__)
 
 __all__ = ['SUBMISSION_RESULT', 'Submission', 'SubmissionSource', 'SubmissionTestCase']
 
@@ -126,7 +128,7 @@ class Submission(models.Model):
     def is_locked(self):
         return self.locked_after is not None and self.locked_after < timezone.now()
 
-    def judge(self, *args, rejudge=False, force_judge=False, rejudge_user=None, **kwargs):
+    def judge(self, *args, name = "submission-request", rejudge=False, force_judge=False, rejudge_user=None, **kwargs):
         if force_judge or not self.is_locked:
             if rejudge:
                 with revisions.create_revision(manage_manually=True):
@@ -134,7 +136,7 @@ class Submission(models.Model):
                         revisions.set_user(rejudge_user)
                     revisions.set_comment('Rejudged')
                     revisions.add_to_revision(self)
-            judge_submission(self, *args, rejudge=rejudge, **kwargs)
+            judge_submission(self, name, *args, rejudge=rejudge, **kwargs)
 
     judge.alters_data = True
 

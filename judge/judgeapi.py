@@ -53,7 +53,7 @@ def judge_request(packet, reply=True):
         return result
 
 
-def judge_submission(submission, rejudge=False, batch_rejudge=False, judge_id=None):
+def judge_submission(submission, name='submission-request', rejudge=False, batch_rejudge=False, judge_id=None ):
     from .models import ContestSubmission, Submission, SubmissionTestCase
 
     updates = {'time': None, 'memory': None, 'points': None, 'result': None, 'case_points': 0, 'case_total': 0,
@@ -92,7 +92,7 @@ def judge_submission(submission, rejudge=False, batch_rejudge=False, judge_id=No
 
     try:
         response = judge_request({
-            'name': 'submission-request',
+            'name': name,
             'submission-id': submission.id,
             'problem-id': submission.problem.code,
             'language': submission.language.key,
