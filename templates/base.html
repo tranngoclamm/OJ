@@ -59,6 +59,8 @@
         <link rel="stylesheet" href="{{ static('source_sans_pro.css') }}">
         <link rel="stylesheet" type="text/css" href="{{ static('libs/clipboard/tooltip.css') }}">
         <link rel="stylesheet" type="text/css" href="{{ static('libs/select2/select2.css') }}">
+        <link rel="stylesheet" type="text/css" href="{{ static('libs/ace-editor/ide_styles.css') }}">
+
     {% endcompress %}
     <link rel="canonical"
           href="{{ DMOJ_SCHEME }}://{{ DMOJ_CANONICAL|default(site.domain) }}{{ request.get_full_path() }}">
@@ -350,7 +352,95 @@
         {% endblock %}
         <div id="content-body">{% block body %}{% endblock %}</div>
     </main>
+    <div class="ace_wrapper">
+        <div class="header">
+            <div class="flex file_name-wrapper">
+                <input class="file-name" value="main.c" spellcheck="false" type="text" >
+                <i onclick="saveFile()" class="fa fa-download" aria-hidden="true"></i>
+            </div>
 
+            <label for="language">Language:</label>
+            <select id="language">
+                <option value="c" selected>C</option>
+                <option value="cpp">CPP20</option>
+                <option value="java">Java</option>
+                <option value="kotlin">Kotlin</option>
+                <option value="pascal">Pas</option>
+                <option value="pypy">PyPy</option>
+                <option value="python">Py3</option>
+            </select>
+
+            <label for="theme">Theme:</label>
+            <select id="theme">
+                <option value="textmate">TextMate</option>
+                <option value="monokai">Monokai</option>
+                <option value="github">GitHub</option>
+                <option value="tomorrow">Tomorrow</option>
+                <option value="kuroir">Kuroir</option>
+                <option value="twilight">Twilight</option>
+                <option value="xcode">XCode</option>
+                <option value="solarized_dark">Solarized Dark</option>
+                <option value="solarized_light">Solarized Light</option>
+                <option value="terminal">Terminal</option>
+            </select>
+            
+            <i onclick="hideIde()" class="fa fa-times" aria-hidden="true"></i>
+        </div>
+
+        <div id="editor2"></div>
+
+        <div class="tabs">
+            <div class="tab-button input-btn active" onclick="showTab('input-tab')">Input</div>
+            <div class="tab-button output-btn" onclick="showTab('output-tab')">Output</div>
+        </div>
+
+        <div id="input-tab" class="tab-content active">
+            <textarea spellcheck="false" id="input" placeholder="Nhập input tại đây..."
+                style="width:100%; height: 130px;"></textarea>
+        </div>
+
+        <div id="output-tab" class="tab-content">
+            <textarea id="terminal" style="width:100%; height: 130px;" readonly></textarea>
+        </div>
+        <div class="flex submit-wrapper">
+            <button class="submit-btn" onclick="runCode()">Run</button>
+            <button class="submit-btn problem-submit-btn" onclick="submitProblem()">Submit</button>
+        </div>
+    </div>
+
+    <form hidden id="ide_submit_form" method="post" 
+            action="" 
+            enctype="multipart/form-data">
+
+        {% csrf_token %}
+        <textarea name="source" id="ide_source" required></textarea>
+
+        <select name="language" id="ide_language" required>
+            <option value="5">C</option>
+            <option value="1">CPP03</option>
+            <option value="2">CPP11</option>
+            <option value="3">CPP14</option>
+            <option value="4">CPP17</option>
+            <option value="14">CPP20</option>
+            <option value="10">Java8</option>
+            <option value="18">Java</option>
+            <option value="15">Kotlin</option>
+            <option value="7">Pas</option>
+            <option value="8">Py2</option>
+            <option value="9">Py3</option>
+            <option value="16">PyPy</option>
+            <option value="17">PyPy3</option>
+        </select>
+
+        <input type="file" name="submission_file">
+        <input type="hidden" name="judge" value=""> 
+
+        <button type="submit" class="button">Nộp bài từ IDE</button>
+    </form>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.39.1/ace.js"></script>
+    <script src="{{ static('libs/ace-editor/ide.js') }}"></script>
+    
     {% if misc_config.announcement %}
         <div id="announcement">{{ misc_config.announcement|safe }}</div>
     {% endif %}
