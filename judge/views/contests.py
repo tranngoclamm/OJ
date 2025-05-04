@@ -275,6 +275,7 @@ class ContestMixin(object):
 from judge.models.exam_access import ExamAccess
 from django.conf import settings
 from django.shortcuts import render
+import hashlib
 
 class ContestDetail(ContestMixin, TitleMixin, CommentedDetailView):
     template_name = 'contest/contest.html'
@@ -352,13 +353,18 @@ class ContestDetail(ContestMixin, TitleMixin, CommentedDetailView):
             contest = self.get_object()
             if ExamAccess.objects.filter(contest_id=contest.id, user_id=user.id).exists():
                 # Kỳ thi đặc biệt → yêu cầu header SEB
-                seb_key = request.headers.get('X-SafeExamBrowser-RequestHash')
-                seb_keys = getattr(settings, 'SEB_BROWSER_KEYS', [])
-                
-                print("📋 SEB_BROWSER_KEYS từ local_settings.py:", seb_keys)
-                print("📩 SEB Key từ Header:", seb_key)
-                if not seb_key or seb_key not in getattr(settings, 'SEB_BROWSER_KEYS', []):
+                seb_hash = request.headers.get('X-SafeExamBrowser-RequestHash')
+                browser_exam_keys = getattr(settings, 'SEB_BROWSER_KEYS', [])
+                if not seb_hash:
                     return render(request, 'errors/seb_forbidden.html', status=403)
+
+                absolute_url = request.build_absolute_uri()
+                for bek in browser_exam_keys:  # danh sách các BEK hợp lệ
+                    expected = hashlib.sha256((absolute_url + bek).encode()).hexdigest()
+                    if expected == seb_hash:
+                        return super().dispatch(request, *args, **kwargs)
+                return render(request, 'errors/seb_forbidden.html', status=403)
+
         return super().dispatch(request, *args, **kwargs)
 
 
