@@ -49,6 +49,7 @@ from judge.utils.ranker import ranker
 from judge.utils.stats import get_bar_chart, get_pie_chart, get_stacked_bar_chart
 from judge.utils.views import DiggPaginatorMixin, QueryStringSortMixin, SingleObjectFormView, TitleMixin, \
     add_file_response, generic_message
+from judge.views.register import RegistrationForm
 
 __all__ = ['ContestList', 'ContestDetail', 'ContestRanking', 'ContestJoin', 'ContestLeave', 'ContestCalendar',
            'ContestClone', 'ContestStats', 'ContestMossView', 'ContestMossDelete',
@@ -271,6 +272,9 @@ class ContestMixin(object):
         except PermissionDenied as e:
             return generic_message(request, _('Permission denied'), e)
 
+from judge.models.exam_access import ExamAccess
+from django.conf import settings
+from django.shortcuts import render
 
 class ContestDetail(ContestMixin, TitleMixin, CommentedDetailView):
     template_name = 'contest/contest.html'
@@ -340,6 +344,22 @@ class ContestDetail(ContestMixin, TitleMixin, CommentedDetailView):
         context['can_download_data'] = bool(settings.DMOJ_CONTEST_DATA_DOWNLOAD)
 
         return context
+    
+    def dispatch(self, request, *args, **kwargs):
+        # Chỉ áp dụng nếu user đang đăng nhập và contest là kỳ thi đặc biệt
+        user = request.user
+        if user.is_authenticated:
+            contest = self.get_object()
+            if ExamAccess.objects.filter(contest_id=contest.id, user_id=user.id).exists():
+                # Kỳ thi đặc biệt → yêu cầu header SEB
+                seb_key = request.headers.get('X-SafeExamBrowser-RequestHash')
+                seb_keys = getattr(settings, 'SEB_BROWSER_KEYS', [])
+                
+                print("📋 SEB_BROWSER_KEYS từ local_settings.py:", seb_keys)
+                print("📩 SEB Key từ Header:", seb_key)
+                if not seb_key or seb_key not in getattr(settings, 'SEB_BROWSER_KEYS', []):
+                    return render(request, 'errors/seb_forbidden.html', status=403)
+        return super().dispatch(request, *args, **kwargs)
 
 
 class ContestAllProblems(ContestMixin, TitleMixin, DetailView):
@@ -1229,6 +1249,69 @@ class ContestTagDetail(TitleMixin, ContestTagDetailAjax):
     def get_title(self):
         return _('Contest tag: %s') % self.object.name
 
+from django.contrib.auth import get_user_model
+from django.utils.text import slugify
+from docx import Document
+import random
+import string
+from django.http import HttpResponseRedirect
+def random_upper(length):
+    return ''.join(random.choices(string.ascii_uppercase, k=length))
+
+from io import BytesIO
+from django.http import HttpResponse
+from copy import deepcopy 
+from judge.models.exam_access import ExamAccess
+from django.http import FileResponse
+
+import threading
+
+def download_account_docx(request):
+    path = request.session.pop('account_docx_path', None)
+    if not path or not os.path.exists(path):
+        raise Http404("File not found.")
+
+    # Mở file để gửi
+    file_handle = open(path, 'rb')
+    response = FileResponse(file_handle, as_attachment=True, filename=os.path.basename(path))
+
+    # Tạo thread để xoá file sau một khoảng trễ ngắn (đảm bảo client đã nhận file)
+    def delayed_delete(file_path):
+        import time
+        time.sleep(0.5)  # Chờ vài giây để đảm bảo response đã hoàn tất
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            print(f"Không thể xoá file {file_path}: {e}")
+
+    threading.Thread(target=delayed_delete, args=(path,)).start()
+
+    return response
+
+def export_accounts_to_docx(account_list, filename_prefix):
+    doc = Document()
+    doc.add_heading(f'Danh sách tài khoản {filename_prefix}', level=1)    
+    table = doc.add_table(rows=1, cols=2)
+    table.style = 'Table Grid'
+
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = 'Tài khoản'
+    hdr_cells[1].text = 'Mật khẩu'
+
+    for username, password in account_list:
+        row_cells = table.add_row().cells
+        row_cells[0].text = username
+        row_cells[1].text = password
+
+    # Tạo tên file duy nhất
+    filename = f'{filename_prefix}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
+    file_path = os.path.join(settings.MEDIA_ROOT, 'exports', filename)
+
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    doc.save(file_path)
+
+    return file_path
 
 class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
     template_name = 'contest/create.html'
@@ -1265,8 +1348,13 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
 
     def post(self, request, *args, **kwargs):
         self.object = None
-        form = ContestForm(request.POST or None)
+        post_data = request.POST.copy()
+        is_exam = post_data.pop('is_exam', False)
+        organization_id = post_data.pop('exam_organization', [None])
+        organization_id = organization_id[0]
+        form = ContestForm(post_data, instance=self.object)
         form_set = self.get_contest_problem_formset()
+
         if form.is_valid() and form_set.is_valid():
             with revisions.create_revision(atomic=True):
                 self.save_contest_form(form)
@@ -1277,9 +1365,67 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
                 revisions.set_comment(_('Created on site'))
                 revisions.set_user(self.request.user)
             on_new_contest.delay(self.object.key)
+            if organization_id and is_exam:
+                try:
+                    organization = Organization.objects.get(pk=organization_id)
+                    problems = self.object.problems.all()
+                    members = organization.members.filter(is_unlisted=False).select_related('user')
+                    new_accounts = []
+                    for member in members:
+                        old_user = member.user
+                        if(old_user.is_staff == False):
+                            base_username = old_user.username
+                            new_username = f"{random_upper(4)}_{base_username}"
+
+                            while get_user_model().objects.filter(username=new_username).exists():
+                                new_username = f"{random_upper(4)}_{base_username}"
+
+                            password = random_upper(8)
+
+                            form_data = {
+                                'username': new_username,
+                                'password1': password,
+                                'password2': password,
+                                'full_name': old_user.get_full_name(),
+                                'timezone': member.timezone,
+                                'language': member.language.id,
+                                'organizations': "",
+                                'newsletter': False,
+                                'email': old_user.email or f"{slugify(new_username)}@example.com",
+                                'tos': True,
+                            }
+
+                            registration_form = RegistrationForm(data=form_data)
+                            if registration_form.is_valid():
+                                new_user = registration_form.save()
+                                # Tạo JudgeProfile nếu thiếu
+                                from judge.models import Profile  # hoặc tùy tên đúng trong project bạn
+
+                                if not hasattr(new_user, 'judgeprofile'):
+                                    Profile.objects.create(user=new_user)
+                                new_accounts.append((new_username, password))
+                                self.object.private_contestants.add(new_user.profile)
+                            else:
+                                print(f"Lỗi đăng ký {new_username}: {registration_form.errors}")
+                            
+                            user = member.user
+                            for problem in problems:
+                                ExamAccess.objects.update_or_create(
+                                    contest=self.object,
+                                    problem=problem,
+                                    organization=organization,
+                                    user=new_user
+                                )
+
+                    link_download = export_accounts_to_docx(new_accounts, f'{organization.slug}_{self.object}')
+                    request.session['account_docx_path'] = link_download
+                except Organization.DoesNotExist:
+                        organization = None
+
             return HttpResponseRedirect(self.get_success_url())
         else:
             return self.render_to_response(self.get_context_data(*args, **kwargs))
+
 
     def dispatch(self, request, *args, **kwargs):
         try:

@@ -350,6 +350,18 @@
     {% endif %}
 
     <div style="clear: both;"></div>
+    {% if request.session.account_docx_path %}
+    <script>
+        window.onload = function () {
+            const link = document.createElement('a');
+            link.href = "{{ url('download_account_docx') }}";
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+    {% endif %}
 {% endblock %}
 
 {% block description_end %}{% endblock %}

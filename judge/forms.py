@@ -747,6 +747,20 @@ class BlogPostForm(ModelForm):
 class ContestForm(ModelForm):
     required_css_class = 'required'
 
+    is_exam = forms.BooleanField(
+        label=_('This is an exam'),
+        required=False,
+        help_text=_('If selected, the contest will only be accessible via the internal SEB.'),
+    )
+
+    exam_organization = forms.ModelChoiceField(
+        label=_('Participating organization'),
+        queryset=Organization.objects.none(),
+       required=False,
+        widget=Select2Widget(),
+        help_text=_('Select the organization participating in the exam.'),
+    )
+
     def __init__(self, *args, **kwargs):
         self.org_pk = org_pk = kwargs.pop('org_pk', None)
         self.user = kwargs.pop('user', None)
@@ -763,6 +777,15 @@ class ContestForm(ModelForm):
         self.fields['private_contestants'].help_text = \
             str(self.fields['private_contestants'].help_text) + ' ' + \
             str(_('You can paste a list of usernames into this box.'))
+        
+        self.fields['exam_organization'].queryset = (
+            self.user.profile.organizations.all()
+            if self.user and hasattr(self.user, 'profile')
+            else Organization.objects.none()
+        ) 
+
+        if not self.data.get('is_exam') and not (self.instance and self.instance.pk and getattr(self.instance, 'is_exam', False)):
+            self.fields['exam_organization'].widget.attrs['disabled'] = 'disabled'
 
     def clean(self):
         cleaned_data = super().clean()
@@ -775,7 +798,15 @@ class ContestForm(ModelForm):
             raise forms.ValidationError(_('Contest duration cannot be longer than %d days')
                                         % settings.VNOJ_CONTEST_DURATION_LIMIT,
                                         'contest_duration_too_long')
+        
+        # Nếu là kỳ thi thì phải có tổ chức
+        is_exam = cleaned_data.get('is_exam')
+        exam_org = cleaned_data.get('exam_organization')
+        if is_exam and not exam_org:
+            self.add_error('exam_organization', _('Organization is required for an exam.'))
+
         return cleaned_data
+
 
     def clean_key(self):
         key = self.cleaned_data['key']
@@ -803,6 +834,8 @@ class ContestForm(ModelForm):
             'access_code',
             'is_private',
             'private_contestants',
+            'is_exam',
+            'exam_organization',
         ]
 
         widgets = {

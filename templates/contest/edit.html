@@ -61,6 +61,28 @@
             });
         })
     </script>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const isExamCheckbox = document.querySelector("#id_is_exam");
+            const orgField = document.querySelector("#id_exam_organization");
+
+            function toggleOrganizationField() {
+                if (isExamCheckbox.checked) {
+                    orgField.removeAttribute("disabled");
+                } else {
+                    orgField.setAttribute("disabled", "disabled");
+                    orgField.selectedIndex = 0;  // Optional: bỏ chọn nếu uncheck
+                }
+            }
+
+            // Gọi khi load trang
+            toggleOrganizationField();
+
+            // Gọi mỗi khi checkbox thay đổi
+            isExamCheckbox.addEventListener("change", toggleOrganizationField);
+        });
+    </script>
     {{ form.media.js }}
 {% endblock %}
 
@@ -103,7 +125,10 @@
     <form action="" method="post" class="form-area" style="display: flex; justify-content: center; flex-direction: column;">
         {% csrf_token %}
         {{ contest_problem_formset.management_form }}
-        <table class="django-as-table">{{ form.as_table() }}</table>
+        <table class="django-as-table">
+            {{ form.as_table() }}
+        </table>
+
         <hr>
         <center><h3> {{ _('Problems') }} </h3></center>
         {% if contest_problem_formset.non_form_errors() %}
