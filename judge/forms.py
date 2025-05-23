@@ -26,6 +26,7 @@ from judge.models import BlogPost, Contest, ContestAnnouncement, ContestProblem,
 from judge.utils.subscription import newsletter_id
 from judge.widgets import HeavySelect2MultipleWidget, HeavySelect2Widget, MartorWidget, \
     Select2MultipleWidget, Select2Widget
+from judge.models.exam_access import ExamAccess
 
 TOTP_CODE_LENGTH = 6
 
@@ -777,7 +778,15 @@ class ContestForm(ModelForm):
         self.fields['private_contestants'].help_text = \
             str(self.fields['private_contestants'].help_text) + ' ' + \
             str(_('You can paste a list of usernames into this box.'))
-        
+        if self.instance and self.instance.pk:
+            self.fields['is_exam'].disabled = True
+            self.fields['exam_organization'].disabled = True
+            # Truy vấn ExamAccess để gán initial
+            access_qs = ExamAccess.objects.filter(contest=self.instance)
+            if access_qs.exists():
+                self.fields['is_exam'].initial = True
+                self.fields['exam_organization'].initial = access_qs.first().organization_id
+
         self.fields['exam_organization'].queryset = (
             self.user.profile.organizations.all()
             if self.user and hasattr(self.user, 'profile')

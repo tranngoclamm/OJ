@@ -68,11 +68,10 @@
             const orgField = document.querySelector("#id_exam_organization");
 
             function toggleOrganizationField() {
-                if (isExamCheckbox.checked) {
+                if (!isExamCheckbox.disabled && isExamCheckbox.checked) {
                     orgField.removeAttribute("disabled");
                 } else {
                     orgField.setAttribute("disabled", "disabled");
-                    orgField.selectedIndex = 0;  // Optional: bỏ chọn nếu uncheck
                 }
             }
 
