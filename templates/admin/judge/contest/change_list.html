@@ -10,4 +10,39 @@
             </a>
         </li>
     {% endif %}
+    
+<form id="import-form" hidden method="POST" enctype="multipart/form-data" action="{% url 'admin:judge_contest_import' %}">
+    {% csrf_token %}
+    <input type="file" name="zip_file" id="zip_file" required>
+</form>
+
+<li>
+    <a href="#" id="import-contest-btn" class="importlink">
+        <i class="fa fa-upload"></i> {% trans "Import contests" %}
+    </a>
+</li>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const zipInput = document.getElementById("zip_file");
+        const importBtn = document.getElementById("import-contest-btn");
+    
+        importBtn.addEventListener("click", function (e) {
+            e.preventDefault();  // Ngăn chặn hành vi mặc định
+            e.stopPropagation(); // Ngăn sự kiện lan ra các thẻ cha 
+    
+            zipInput.value = ""; // reset lại input
+            zipInput.click();
+        });
+    
+        zipInput.addEventListener("change", function () {
+            if (zipInput.files.length > 0) {
+                document.getElementById("import-form").submit();
+            } else {
+                console.log("⚠️ Không có file nào được chọn");
+            }
+        });
+    });
+    </script>
+
 {% endblock %}

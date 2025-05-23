@@ -1,3 +1,8 @@
+from datetime import datetime
+import json
+import os
+import tempfile
+import zipfile
 from adminsortable2.admin import SortableInlineAdminMixin
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
@@ -182,6 +187,9 @@ class ContestAdmin(NoBatchDeleteMixin, VersionAdmin):
             for action in ('set_locked', 'set_unlocked'):
                 actions[action] = self.get_action(action)
 
+        if request.user.has_perm('judge.export_contest'):
+                actions['export_contests'] = (self.export_contests, 'export_contests', _('Export contests'))
+
         return actions
 
     def get_queryset(self, request):
@@ -279,13 +287,204 @@ class ContestAdmin(NoBatchDeleteMixin, VersionAdmin):
         self.message_user(request, ngettext('%d contest successfully unlocked.',
                                             '%d contests successfully unlocked.',
                                             count) % count)
+    @admin.action(description=_('Export contests'))
+    def export_contests(self, modeladmin, request, queryset):
+        import os, tempfile, subprocess, io, zipfile, re
+        from django.http import FileResponse
+        from django.conf import settings
+        from django.db import connection
+        from django.contrib import messages
 
+        db_settings = settings.DATABASES['default']
+        db_user = db_settings['USER']
+        db_password = db_settings.get('PASSWORD', '')
+        db_name = db_settings['NAME']
+        db_host = db_settings.get('HOST', 'localhost')
+        db_port = db_settings.get('PORT', '3306')  
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sql_paths = []
+            for contest in queryset:
+                contest_id = contest.id
+                
+                sql_filename = f'contest_{contest_id}.sql'
+                sql_filepath = os.path.join(tmpdir, sql_filename)
+                
+                tables = [
+                    'judge_contest',
+                    'judge_contestproblem',
+                    'judge_contestannouncement',
+                    'judge_contestmoss',
+                    'judge_contestparticipation',
+                    'judge_contestsubmission',
+                    'judge_submission',
+                    'judge_submissionsource',
+                    'judge_submissiontestcase',
+                    'auth_user',         
+                    'judge_profile',     
+                    'judge_problem',
+                    # Các bảng many-to-many
+                    'judge_problem_allowed_languages',
+                    'judge_languagelimit',
+                    'judge_problem_authors',
+                    'judge_problem_banned_users',
+                    'judge_problem_curators',
+                    'judge_problem_organizations',
+                    'judge_problem_testers',
+                    'judge_problem_types',
+                    'judge_problemclarification',
+                    'judge_problemdata',
+                    'judge_problemgroup',
+                    'judge_problemtestcase',
+                    'judge_problemtranslation',
+                    'judge_problemtype',
+                    'judge_contest_authors',
+                    'judge_contest_curators',
+                    'judge_contest_testers',
+                    'judge_contest_tags',
+                    'judge_contest_private_contestants',
+                    'judge_contest_organizations',
+                    'judge_contest_banned_users',
+                    'judge_contest_banned_judges',
+                    'judge_contest_view_contest_scoreboard',
+                    'judge_contest_rate_exclude',
+                ]
+                
+                with open(sql_filepath, 'w') as f:
+                    f.write(f"-- SQL dump for contest {contest_id} (data only)\n")
+                    f.write("-- This file contains only INSERT statements without table structure\n")
+                    f.write("SET FOREIGN_KEY_CHECKS=0;\n\n")
+                
+                if 'mysql' in db_settings.get('ENGINE', '').lower():
+                    dump_env = os.environ.copy()
+                    if db_password:
+                        dump_env['MYSQL_PWD'] = db_password  
+                    
+                    success = True
+                    has_data = False
+                    
+                    for table in tables:
+                        base_cmd = [
+                            'mysqldump',
+                            f'--host={db_host}',
+                            f'--port={db_port}',
+                            f'--user={db_user}',
+                            '--skip-extended-insert',  
+                            '--no-create-info',        
+                            '--no-create-db',          
+                            '--skip-triggers',         
+                            '--single-transaction',    
+                            db_name
+                        ]
+                        
+                        if table == 'judge_contest':
+                            condition = f"id={contest_id}"
+                        elif table == 'judge_contestproblem':
+                            condition = f"contest_id={contest_id}"
+                        elif table == 'judge_contestannouncement':
+                            condition = f"contest_id={contest_id}"
+                        elif table == 'judge_contestmoss':
+                            condition = f"contest_id={contest_id}"
+                        elif table == 'judge_contestparticipation':
+                            condition = f"contest_id={contest_id}"
+                        elif table == 'judge_contestsubmission':
+                            condition = f"participation_id IN (SELECT id FROM judge_contestparticipation WHERE contest_id={contest_id})"
+                        elif table == 'judge_submission':
+                            condition = f"id IN (SELECT submission_id FROM judge_contestsubmission WHERE participation_id IN (SELECT id FROM judge_contestparticipation WHERE contest_id={contest_id}))"
+                        elif table == 'judge_submissionsource':
+                            condition = f"submission_id IN (SELECT submission_id FROM judge_contestsubmission WHERE participation_id IN (SELECT id FROM judge_contestparticipation WHERE contest_id={contest_id}))"
+                        elif table == 'judge_submissiontestcase':
+                            condition = f"submission_id IN (SELECT submission_id FROM judge_contestsubmission WHERE participation_id IN (SELECT id FROM judge_contestparticipation WHERE contest_id={contest_id}))"  
+                        elif table == 'auth_user':
+                            condition = f"id IN (SELECT user_id FROM judge_profile WHERE id IN (SELECT profile_id FROM judge_contest_private_contestants WHERE contest_id={contest_id}))"
+                        elif table == 'judge_profile':
+                            condition = f"id IN (SELECT profile_id FROM judge_contest_private_contestants WHERE contest_id={contest_id})"
+                        elif table == 'judge_problem':
+                            condition = f"id IN (SELECT problem_id FROM judge_contestproblem WHERE contest_id={contest_id})"
+                        elif table == 'judge_problemdata':
+                            condition = f"problem_id IN (SELECT problem_id FROM judge_contestproblem WHERE contest_id={contest_id})"
+                        elif table == 'judge_problemtestcase':
+                            condition = f"dataset_id IN (SELECT problem_id FROM judge_contestproblem WHERE contest_id={contest_id})"
+                        elif table == 'judge_languagelimit':
+                            condition = f"problem_id IN (SELECT problem_id FROM judge_contestproblem WHERE contest_id={contest_id})"
+                        elif table.startswith('judge_problem_'):
+                            condition = f"problem_id IN (SELECT problem_id FROM judge_contestproblem WHERE contest_id={contest_id})"
+                        elif table.startswith('judge_contest_'):
+                            condition = f"contest_id={contest_id}"
+                        else:
+                            continue  
+                        
+                        table_cmd = base_cmd + ['--where', condition, table]
+                        
+                        try:
+                            temp_table_file = os.path.join(tmpdir, f"{table}_{contest_id}_temp.sql")
+                            
+                            with open(temp_table_file, 'w') as temp_f:
+                                result = subprocess.run(
+                                    table_cmd, 
+                                    stdout=temp_f, 
+                                    stderr=subprocess.PIPE, 
+                                    env=dump_env, 
+                                    text=True,
+                                    check=False  # Không dừng khi lỗi
+                                )
+                                
+                                if result.returncode != 0:
+                                    messages.warning(
+                                        request, 
+                                        f"Lỗi khi export bảng {table} cho contest {contest_id}: {result.stderr}"
+                                    )
+                                    success = False
+                                    continue
+                            
+                            with open(temp_table_file, 'r') as temp_f:
+                                content = temp_f.read()
+                                if re.search(r'INSERT\s+INTO', content, re.IGNORECASE):
+                                    with open(sql_filepath, 'a') as main_f:
+                                        main_f.write(content)
+                                        main_f.write('\n')
+                                    has_data = True
+                            
+                            os.remove(temp_table_file)
+                            
+                        except Exception as e:
+                            messages.error(request, f"Lỗi khi thực thi mysqldump: {str(e)}")
+                            success = False
+                    
+                    with open(sql_filepath, 'a') as f:
+                        f.write("\nSET FOREIGN_KEY_CHECKS=1;\n")
+                    
+                    if success and has_data:
+                        sql_paths.append(sql_filepath)
+                        
+            if not sql_paths:
+                messages.error(request, "Không có dữ liệu nào được xuất.")
+                return None
+            
+            date_str = datetime.now().strftime('%Y%m%d')
+
+            contest_ids_str = '_'.join([f"{contest}" for contest in queryset])
+
+            zip_filename = f"{date_str}_{contest_ids_str}.zip"
+            zip_filepath = os.path.join(tmpdir, zip_filename)
+            
+            with zipfile.ZipFile(zip_filepath, 'w') as zipf:
+                for file in sql_paths:
+                    zipf.write(file, arcname=os.path.basename(file))
+            
+            buffer = io.BytesIO()
+            with open(zip_filepath, 'rb') as f:
+                buffer.write(f.read())
+            
+            buffer.seek(0)
+            return FileResponse(buffer, as_attachment=True, filename=zip_filename)
+        
     def set_locked_after(self, contest, locked_after):
         with transaction.atomic():
             contest.locked_after = locked_after
             contest.save()
             Submission.objects.filter(contest_object=contest,
-                                      contest__participation__virtual=0).update(locked_after=locked_after)
+                                    contest__participation__virtual=0).update(locked_after=locked_after)
 
     def get_urls(self):
         return [
@@ -294,6 +493,7 @@ class ContestAdmin(NoBatchDeleteMixin, VersionAdmin):
             path('<int:contest_id>/rejudge/<int:problem_id>/', self.rejudge_view, name='judge_contest_rejudge'),
             path('<int:contest_id>/rescore/<int:problem_id>/', self.rescore_view, name='judge_contest_rescore'),
             path('<int:contest_id>/resend/<int:announcement_id>/', self.resend_view, name='judge_contest_resend'),
+            path('import/', self.import_contests_view, name='judge_contest_import'),
         ] + super(ContestAdmin, self).get_urls()
 
     @method_decorator(require_POST)
@@ -358,6 +558,130 @@ class ContestAdmin(NoBatchDeleteMixin, VersionAdmin):
             contest.rate()
         return HttpResponseRedirect(request.META.get('HTTP_REFERER', reverse('admin:judge_contest_changelist')))
 
+    def import_contests_view(self, request):
+        if request.method == 'POST':
+            zip_file = request.FILES['zip_file']
+            imported_names = self.import_contests(zip_file)
+            if imported_names:
+                name_list = ', '.join(imported_names)
+                self.message_user(request, f'Contests: {name_list} imported successfully.')
+
+            else:
+                self.message_user(request, 'Import contest failed.', level='warning')
+            return HttpResponseRedirect('/admin/judge/contest/')
+        return self.render_change_form(
+            request,
+            context={
+                **self.admin_site.each_context(request),
+                'opts': self.model._meta,
+                'action_form': None,
+            }
+        )
+
+    def import_contests(self, zip_file):
+        overwrite = True
+        import os, tempfile, zipfile, re
+        from django.db import connection, transaction
+        from django.contrib import messages
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_zip_path = os.path.join(tmpdir, 'contests.zip')
+            with open(temp_zip_path, 'wb') as f:
+                for chunk in zip_file.chunks():
+                    f.write(chunk)
+            
+            with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(tmpdir)
+            
+            sql_files = [f for f in os.listdir(tmpdir) if f.endswith('.sql') and f.startswith('contest_')]
+            
+            if not sql_files:
+                raise ValueError("No SQL files found in the ZIP archive")
+            
+            sql_files.sort()
+            
+            cursor = connection.cursor()
+            contest_name_list = []
+            for sql_file in sql_files:
+                match = re.match(r'contest_(\d+)\.sql', sql_file)
+                if not match:
+                    continue
+                    
+                contest_id = match.group(1)
+                sql_path = os.path.join(tmpdir, sql_file)
+                
+                with open(sql_path, 'r', encoding='utf-8') as f:
+                    sql_content = f.read()
+                
+                with transaction.atomic():
+                    try:
+                        cursor.execute("SET FOREIGN_KEY_CHECKS=0")
+                        
+                        sql_statements = []
+                        current_statement = ""
+                        
+                        for line in sql_content.split('\n'):
+                            if line.strip().startswith('--') or not line.strip():
+                                continue
+                            
+                            if line.strip().upper().startswith('SET '):
+                                if current_statement:
+                                    sql_statements.append(current_statement)
+                                    current_statement = ""
+                                sql_statements.append(line)
+                                continue
+                                
+                            current_statement += line + "\n"
+                            
+                            if line.strip().endswith(';'):
+                                sql_statements.append(current_statement)
+                                current_statement = ""
+                        
+                        if current_statement.strip():
+                            sql_statements.append(current_statement)
+                        
+
+                        temp_contest_name = None
+                        for statement in sql_statements:
+                            modified_statement = statement
+
+                            if modified_statement.strip().startswith("INSERT INTO `judge_contest`"):
+                                match = re.search(r"INSERT INTO `judge_contest` VALUES\s*\(\s*(\d+)\s*,\s*'([^']*)'\s*,\s*'([^']*)'", modified_statement)
+                                if match:
+                                    temp_contest_name = match.group(3)
+                            if "LOCK TABLES" in modified_statement.upper() or "UNLOCK TABLES" in modified_statement.upper():
+                                continue
+                                
+                            if modified_statement.strip().upper().startswith('INSERT INTO'):
+                                table_match = re.search(r'INSERT INTO\s+`?(\w+)`?', modified_statement)
+                                table_name = table_match.group(1).strip('`') if table_match else None
+                                
+                                sensitive_tables = ['django_migrations']
+                                
+                                if table_name and table_name not in sensitive_tables:
+                                    if overwrite:
+                                        modified_statement = modified_statement.replace('INSERT INTO', 'REPLACE INTO', 1)
+                                    else:
+                                        modified_statement = modified_statement.replace('INSERT INTO', 'INSERT IGNORE INTO', 1)
+                                        
+                            
+                            if modified_statement.strip():
+                                try:
+                                    cursor.execute(modified_statement)
+                                except Exception as e:
+                                    print(f"Error executing statement: {modified_statement[:100]}...")
+                                    print(f"Error details: {str(e)}")
+                                    if "SET " not in modified_statement.upper() and "LOCK" not in modified_statement.upper():
+                                        raise
+                        
+                        cursor.execute("SET FOREIGN_KEY_CHECKS=1")
+        
+                        if temp_contest_name:
+                            contest_name_list.append(temp_contest_name)
+                    except Exception as e:
+                        raise Exception(f"Error importing contest {contest_id}: {str(e)}")
+            return contest_name_list  
+                                    
     def get_form(self, request, obj=None, **kwargs):
         form = super(ContestAdmin, self).get_form(request, obj, **kwargs)
         if 'problem_label_script' in form.base_fields:
