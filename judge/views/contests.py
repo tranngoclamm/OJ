@@ -275,7 +275,6 @@ class ContestMixin(object):
 from judge.models.exam_access import ExamAccess
 from django.conf import settings
 from django.shortcuts import render
-import hashlib
 
 class ContestDetail(ContestMixin, TitleMixin, CommentedDetailView):
     template_name = 'contest/contest.html'
@@ -1276,15 +1275,12 @@ def download_account_docx(request):
     path = request.session.pop('account_docx_path', None)
     if not path or not os.path.exists(path):
         raise Http404("File not found.")
-
-    # Mở file để gửi
     file_handle = open(path, 'rb')
     response = FileResponse(file_handle, as_attachment=True, filename=os.path.basename(path))
 
-    # Tạo thread để xoá file sau một khoảng trễ ngắn (đảm bảo client đã nhận file)
     def delayed_delete(file_path):
         import time
-        time.sleep(0.5)  # Chờ vài giây để đảm bảo response đã hoàn tất
+        time.sleep(0.5)  
         try:
             os.remove(file_path)
         except Exception as e:
@@ -1310,7 +1306,7 @@ def export_accounts_to_docx(account_list, filename_prefix):
         row_cells[1].text = password
 
     # Tạo tên file duy nhất
-    filename = f'{filename_prefix}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
+    filename = f'{datetime.now().strftime("%Y%m%d")}_{filename_prefix}.docx'
     file_path = os.path.join(settings.MEDIA_ROOT, 'exports', filename)
 
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -1380,14 +1376,13 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
                     for member in members:
                         old_user = member.user
                         if(old_user.is_staff == False):
+                        
                             base_username = old_user.username
                             new_username = f"{random_upper(4)}_{base_username}"
 
                             while get_user_model().objects.filter(username=new_username).exists():
                                 new_username = f"{random_upper(4)}_{base_username}"
-
                             password = random_upper(8)
-
                             form_data = {
                                 'username': new_username,
                                 'password1': password,
@@ -1404,8 +1399,7 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
                             registration_form = RegistrationForm(data=form_data)
                             if registration_form.is_valid():
                                 new_user = registration_form.save()
-                                # Tạo JudgeProfile nếu thiếu
-                                from judge.models import Profile  # hoặc tùy tên đúng trong project bạn
+                                from judge.models import Profile  
 
                                 if not hasattr(new_user, 'judgeprofile'):
                                     Profile.objects.create(user=new_user)
@@ -1427,7 +1421,6 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
                     request.session['account_docx_path'] = link_download
                 except Organization.DoesNotExist:
                         organization = None
-
             return HttpResponseRedirect(self.get_success_url())
         else:
             return self.render_to_response(self.get_context_data(*args, **kwargs))
