@@ -1,0 +1,72 @@
+.django-ace-widget {
+  display: inline-block;
+  position: relative;
+  /* Scroll bar */
+}
+.django-ace-widget > div {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+.django-ace-widget.loading {
+  display: none;
+}
+.django-ace-widget ::-webkit-scrollbar-track {
+  -webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+  border-radius: 10px;
+  background-color: #f8f8f8;
+}
+.django-ace-widget ::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+  background-color: #f8f8f8;
+}
+.django-ace-widget ::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+  -webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+  background-color: #555;
+}
+
+.django-ace-toolbar {
+  font-size: 12px;
+  text-align: left;
+  color: #555;
+  text-shadow: 0 1px 0 #fff;
+  border-bottom: 1px solid #ccc;
+  background-image: -webkit-gradient(linear, left top, left bottom, from(rgba(0, 0, 0, 0)), to(#eee));
+  background-image: -webkit-linear-gradient(rgba(0, 0, 0, 0), #eee);
+  background-image: -moz-linear-gradient(rgba(0, 0, 0, 0), #eee);
+  background-image: linear-gradient(rgba(0, 0, 0, 0), #eee);
+  background-repeat: repeat-x;
+  clear: both;
+  overflow: hidden;
+}
+
+.django-ace-max_min {
+  float: right;
+  padding: 5px;
+  background: url("./ace/img/expand.png") no-repeat 5px 5px;
+  display: block;
+  height: 16px;
+  width: 16px;
+}
+
+.django-ace-editor {
+  position: relative;
+}
+
+.django-ace-editor-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 1000;
+}
+.django-ace-editor-fullscreen .django-ace-max_min {
+  background-image: url("./ace/img/contract.png");
+}
+
+/*# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIi4uL3Jlc291cmNlcy9hY2UtZG1vai5zY3NzIiwiLi4vc2Fzc19wcm9jZXNzZWQvYWNlLWRtb2ouY3NzIiwiLi4vcmVzb3VyY2VzL3ZhcnMuc2NzcyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiQUFFQTtFQUNJLHFCQUFBO0VBQ0Esa0JBQUE7RUFhQSxlQUFBO0FDYko7QURDSTtFQUNJLGtCQUFBO0VBQ0EsTUFBQTtFQUNBLE9BQUE7RUFDQSxRQUFBO0VBQ0EsU0FBQTtBQ0NSO0FERUk7RUFDSSxhQUFBO0FDQVI7QURJSTtFQUNJLG9EQUFBO0VBQ0EsbUJBQUE7RUFDQSx5QkVmUztBRGFqQjtBREtJO0VBQ0ksV0FBQTtFQUNBLFVBQUE7RUFDQSx5QkVyQlM7QURrQmpCO0FETUk7RUFDSSxtQkFBQTtFQUNBLG9EQUFBO0VBQ0Esc0JFdEJVO0FEa0JsQjs7QURRQTtFQUNJLGVBQUE7RUFDQSxnQkFBQTtFQUNBLFdFN0JjO0VGOEJkLHlCQUFBO0VBQ0EsNkJBQUE7RUFDQSxtR0FBQTtFQUFBLGlFQUFBO0VBQUEsOERBQUE7RUFBQSx5REFBQTtFQUNBLDJCQUFBO0VBQ0EsV0FBQTtFQUNBLGdCQUFBO0FDTEo7O0FEUUE7RUFDSSxZQUFBO0VBQ0EsWUFBQTtFQUVBLHlEQUFBO0VBRUEsY0FBQTtFQUNBLFlBQUE7RUFDQSxXQUFBO0FDUEo7O0FEVUE7RUFDSSxrQkFBQTtBQ1BKOztBRFVBO0VBQ0ksZUFBQTtFQUNBLE1BQUE7RUFDQSxPQUFBO0VBQ0EsU0FBQTtFQUNBLFFBQUE7RUFDQSxhQUFBO0FDUEo7QURTSTtFQUNJLCtDQUFBO0FDUFIiLCJmaWxlIjoiYWNlLWRtb2ouY3NzIn0= */

@@ -247,7 +247,7 @@ class JudgeHandler(ZlibPacketHandler):
                 _, _, input_part = before_code.partition("###INPUT###")
                 input_part = input_part.strip()
                 code_part = after_code.strip()
-
+                print("250 judge_handle")
                 ide_input = input_part
                 source = code_part
             except Exception as e:

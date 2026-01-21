@@ -543,6 +543,12 @@ class CustomAuthenticationForm(AuthenticationForm, SocialAuthMixin):
                 _('This account has been banned. Reason: %s') % user.profile.ban_reason,
                 code='banned',
             )
+    
+        # if user.profile.sessionID and not user.is_superuser:
+        #     raise forms.ValidationError(
+        #         _('This account has been logged in other device'), code='session_exists',
+        #     )
+        
         super(CustomAuthenticationForm, self).confirm_login_allowed(user)
 
 
@@ -762,12 +768,6 @@ class ContestForm(ModelForm):
         help_text=_('Select the organization participating in the exam.'),
     )
     
-    auto_export = forms.BooleanField(
-        label=_('Auto export to Drive'),
-        required=False,
-        help_text=_('If selected, the contest data will be automatically exported and uploaded to Google Drive after the contest ends.'),
-    )
-
     def __init__(self, *args, **kwargs):
         self.org_pk = org_pk = kwargs.pop('org_pk', None)
         self.user = kwargs.pop('user', None)
@@ -846,7 +846,6 @@ class ContestForm(ModelForm):
             'private_contestants',
             'is_exam',
             'exam_organization',
-            'auto_export',
         ]
 
         widgets = {

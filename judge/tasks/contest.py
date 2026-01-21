@@ -4,10 +4,6 @@ import logging
 import os
 import re
 import zipfile
-import tempfile, subprocess, io
-from datetime import datetime
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
 
 from celery import shared_task
 from django.conf import settings
@@ -19,10 +15,9 @@ from moss import MOSS
 from judge.models import Contest, ContestMoss, ContestParticipation, ContestSubmission, Problem, Submission
 from judge.utils.celery import Progress
 
-from django.utils import timezone
-
 __all__ = ('rescore_contest', 'run_moss', 'prepare_contest_data')
 rewildcard = re.compile(r'\*+')
+logger = logging.getLogger('judge.celery')
 
 
 @shared_task(bind=True)
@@ -65,19 +60,22 @@ def run_moss(self, contest_key):
                 ).order_by('-points').values_list('user__user__username', 'source__source')
 
                 if subs.exists():
-                    moss_call = MOSS(moss_api_key, language=moss_lang, matching_file_limit=100,
-                                     comment='%s - %s' % (contest.key, problem.code))
+                    try:
+                        moss_call = MOSS(moss_api_key, language=moss_lang, matching_file_limit=100,
+                                         comment='%s - %s' % (contest.key, problem.code))
 
-                    users = set()
+                        users = set()
 
-                    for username, source in subs:
-                        if username in users:
-                            continue
-                        users.add(username)
-                        moss_call.add_file_from_memory(username, source.encode('utf-8'))
+                        for username, source in subs:
+                            if username in users:
+                                continue
+                            users.add(username)
+                            moss_call.add_file_from_memory(username, source.encode('utf-8'))
 
-                    result.url = moss_call.process()
-                    result.submission_count = len(users)
+                        result.url = moss_call.process()
+                        result.submission_count = len(users)
+                    except Exception as e:
+                        logger.error('Error running MOSS for %s - %s: %s', contest.key, problem.code, type(e))
 
                 moss_results.append(result)
                 p.did(1)
@@ -146,178 +144,3 @@ def prepare_contest_data(self, contest_id, options):
         data_file.close()
 
     return length
-
-@shared_task
-def schedule_auto_export(contest_id):
-    try:
-        contest = Contest.objects.get(id=contest_id)
-        # nếu contest còn chưa kết thúc thì lên lịch
-        if contest.end_time > timezone.now():
-            print(f"[SCHEDULE] Contest {contest} chưa kết thúc. Lên lịch export vào {contest.end_time}")
-            export_contest_to_drive.apply_async((contest_id,), eta=contest.end_time)
-        else:
-            # nếu đã kết thúc thì export ngay lập tức
-            export_contest_to_drive.delay(contest_id)
-    except Contest.DoesNotExist:
-        print(f"[SCHEDULE] Contest {contest_id} không tồn tại")
-        return
-
-@shared_task
-def export_contest_to_drive(contest_id):
-    try:
-        contest = Contest.objects.get(id=contest_id)
-    except Contest.DoesNotExist:
-        print(f"[EXPORT] Contest {contest_id} không tồn tại")
-        return None
-
-    db_settings = settings.DATABASES['default']
-    db_user = db_settings['USER']
-    db_password = db_settings.get('PASSWORD', '')
-    db_name = db_settings['NAME']
-    db_host = db_settings.get('HOST', 'localhost')
-    db_port = str(db_settings.get('PORT', '3306'))
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        sql_paths = []
-        contest_id = contest.id
-
-        sql_filename = f'{contest}.sql'
-        sql_filepath = os.path.join(tmpdir, sql_filename)
-
-        tables = [
-            'judge_contest',
-            'judge_contestproblem',
-            'judge_contestannouncement',
-            'judge_contestmoss',
-            'judge_contestparticipation',
-            'judge_contestsubmission',
-            'judge_submission',
-            'judge_submissionsource',
-            'judge_submissiontestcase',
-            'auth_user',
-            'judge_profile',
-            'judge_problem',
-            # Many-to-many
-            'judge_problem_allowed_languages',
-            'judge_languagelimit',
-            'judge_problem_authors',
-            'judge_problem_banned_users',
-            'judge_problem_curators',
-            'judge_problem_organizations',
-            'judge_problem_testers',
-            'judge_problem_types',
-            'judge_problemclarification',
-            'judge_problemdata',
-            'judge_problemgroup',
-            'judge_problemtestcase',
-            'judge_problemtranslation',
-            'judge_problemtype',
-            'judge_contest_authors',
-            'judge_contest_curators',
-            'judge_contest_testers',
-            'judge_contest_tags',
-            'judge_contest_private_contestants',
-            'judge_contest_organizations',
-            'judge_contest_banned_users',
-            'judge_contest_banned_judges',
-            'judge_contest_view_contest_scoreboard',
-            'judge_contest_rate_exclude',
-            'judge_examaccess',
-        ]
-
-        with open(sql_filepath, 'w') as f:
-            f.write(f"-- SQL dump for contest {contest_id}\n")
-            f.write("SET FOREIGN_KEY_CHECKS=0;\n\n")
-
-        dump_env = os.environ.copy()
-        if db_password:
-            dump_env['MYSQL_PWD'] = db_password
-
-        has_data = False
-
-        for table in tables:
-            # mapping điều kiện where
-            if table == 'judge_contest':
-                condition = f"id={contest_id}"
-            elif table == 'judge_contestproblem':
-                condition = f"contest_id={contest_id}"
-            elif table.startswith('judge_contest') or table == 'judge_examaccess':
-                condition = f"contest_id={contest_id}"
-            elif table == 'judge_contestsubmission':
-                condition = f"participation_id IN (SELECT id FROM judge_contestparticipation WHERE contest_id={contest_id})"
-            elif table == 'judge_submission':
-                condition = f"id IN (SELECT submission_id FROM judge_contestsubmission WHERE participation_id IN (SELECT id FROM judge_contestparticipation WHERE contest_id={contest_id}))"
-            elif table == 'judge_submissionsource':
-                condition = f"submission_id IN (SELECT submission_id FROM judge_contestsubmission WHERE participation_id IN (SELECT id FROM judge_contestparticipation WHERE contest_id={contest_id}))"
-            elif table == 'judge_submissiontestcase':
-                condition = f"submission_id IN (SELECT submission_id FROM judge_contestsubmission WHERE participation_id IN (SELECT id FROM judge_contestparticipation WHERE contest_id={contest_id}))"
-            elif table == 'auth_user':
-                condition = f"id IN (SELECT user_id FROM judge_profile WHERE id IN (SELECT profile_id FROM judge_contest_private_contestants WHERE contest_id={contest_id}))"
-            elif table == 'judge_profile':
-                condition = f"id IN (SELECT profile_id FROM judge_contest_private_contestants WHERE contest_id={contest_id})"
-            elif table == 'judge_problem':
-                condition = f"id IN (SELECT problem_id FROM judge_contestproblem WHERE contest_id={contest_id})"
-            elif table == 'judge_problemdata':
-                condition = f"problem_id IN (SELECT problem_id FROM judge_contestproblem WHERE contest_id={contest_id})"
-            elif table == 'judge_problemtestcase':
-                condition = f"dataset_id IN (SELECT problem_id FROM judge_contestproblem WHERE contest_id={contest_id})"
-            elif table == 'judge_languagelimit':
-                condition = f"problem_id IN (SELECT problem_id FROM judge_contestproblem WHERE contest_id={contest_id})"
-            elif table.startswith('judge_problem_'):
-                condition = f"problem_id IN (SELECT problem_id FROM judge_contestproblem WHERE contest_id={contest_id})"
-            else:
-                continue
-
-            cmd = [
-                'mysqldump',
-                f'--host={db_host}',
-                f'--port={db_port}',
-                f'--user={db_user}',
-                '--skip-extended-insert',
-                '--no-create-info',
-                '--no-create-db',
-                '--skip-triggers',
-                '--single-transaction',
-                db_name,
-                '--where', condition,
-                table
-            ]
-
-            temp_file = os.path.join(tmpdir, f"{table}_{contest}.sql")
-            result = subprocess.run(
-                cmd, stdout=open(temp_file, 'w'),
-                stderr=subprocess.PIPE, env=dump_env, text=True
-            )
-            if result.returncode == 0:
-                with open(temp_file) as tf:
-                    content = tf.read()
-                    if re.search(r'INSERT\s+INTO', content, re.IGNORECASE):
-                        with open(sql_filepath, 'a') as mainf:
-                            mainf.write(content + "\n")
-                        has_data = True
-            os.remove(temp_file)
-
-        with open(sql_filepath, 'a') as f:
-            f.write("\nSET FOREIGN_KEY_CHECKS=1;\n")
-
-        if not has_data:
-            return None
-
-        date_str = datetime.now().strftime('%Y%m%d')
-        zip_filename = f"{date_str}_{contest}.zip"
-        zip_filepath = os.path.join(tmpdir, zip_filename)
-        with zipfile.ZipFile(zip_filepath, 'w') as zipf:
-            zipf.write(sql_filepath, arcname=os.path.basename(sql_filepath))
-
-        gauth = GoogleAuth(settings_file="config/drive/settings.yaml")
-        drive = GoogleDrive(gauth)
-
-        folder = settings.DRIVE_FOLDER_ID
-        gfile = drive.CreateFile({
-            'parents': [{'id': folder}],
-            'title': os.path.basename(zip_filepath)  
-        })
-        gfile.SetContentFile(zip_filepath)
-        gfile.Upload()
-
-        print(f"Uploaded {zip_filepath} to Google Drive folder {folder}")

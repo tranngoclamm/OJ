@@ -218,9 +218,9 @@
         <a id="navicon" href="javascript:void(0)"><i class="fa fa-bars"></i></a>
         <ul id="nav-list">
             {% if request.organization is not defined %}
-                <li class="home-nav-element"><a href="{{ url('home') }}">{% include "site-logo-fragment.html" %}</a></li>
+                <!-- <li class="home-nav-element"><a href="{{ url('home') }}">{% include "site-logo-fragment.html" %}</a></li>
                 <li class="home-nav-element"><span class="nav-divider"></span></li>
-                <li class="home-menu-item"><a href="{{ url('home') }}" class="nav-home">{{ _('Home') }}</a></li>
+                <li class="home-menu-item"><a href="{{ url('home') }}" class="nav-home">{{ _('Home') }}</a></li> -->
                 {% for node in mptt_tree(nav_bar) recursive %}
                     <li>
                         <a href="{{ node.path }}" class="nav-{{ node.key }}{% if node.key in nav_tab %} active{% endif %}">
@@ -300,8 +300,10 @@
             {% else %}
                 <span class="anon">
                     <a href="{{ url('auth_login') }}?next={{ LOGIN_RETURN_PATH|urlencode }}"><b>{{ _('Log in') }}</b></a>
+                    {% if REGISTRATION_OPEN%}
                     &nbsp;{{ _('or') }}&nbsp;
                     <a href="{{ url('registration_register') }}"><b>{{ _('Sign up') }}</b></a>
+                    {% endif %}
                 </span>
             {% endif %}
         </span>
@@ -448,7 +450,7 @@
 
     {% block bodyend %}{% endblock %}
 
-    <footer>
+    <!-- <footer>
         <span id="footer-content">
             <br>
             {{_('proudly powered by %(dmoj)s', dmoj=safe('<a style="color: #808080" href="https://dmoj.ca"><b>DMOJ</b></a>'))}} |
@@ -462,7 +464,7 @@
             <input name="language" type="hidden" value="{{LANGUAGE_CODE}}">
           </form>
         </span>
-    </footer>
+    </footer> --> 
 </div>
 </body>
 </html>

@@ -73,10 +73,10 @@
         </div>
     </div>
     <hr>
-    <span class="social">
+    <!-- <span class="social">
         {{ post_to_facebook(request, post, '<i class="fa fa-facebook-official"></i>') }}
         {{ post_to_twitter(request, SITE_NAME + ':', post, '<i class="fa fa-twitter"></i>') }}
-    </span>
+    </span> -->
     {% include "comments/list.html" %}
     <div style="clear: both;"></div>
 {% endblock %}

@@ -4,6 +4,7 @@ from typing import Optional
 
 from django.conf import settings
 from django.contrib.flatpages.models import FlatPage
+from django.contrib.auth.signals import user_logged_in
 from django.core.cache import cache
 from django.core.cache.utils import make_template_fragment_key
 from django.db import transaction
@@ -11,7 +12,6 @@ from django.db.models.signals import m2m_changed, post_delete, post_save
 from django.dispatch import receiver
 from registration.models import RegistrationProfile
 from registration.signals import user_registered
-
 from judge.caching import finished_submission
 from judge.models import BlogPost, Comment, Contest, ContestAnnouncement, ContestProblem, ContestSubmission, \
     EFFECTIVE_MATH_ENGINES, Judge, Language, License, MiscConfig, Organization, Problem, Profile, Submission, \
@@ -19,6 +19,7 @@ from judge.models import BlogPost, Comment, Contest, ContestAnnouncement, Contes
 from judge.tasks import on_new_comment
 from judge.views.register import RegistrationView
 
+from importlib import import_module
 
 def get_pdf_path(basename: str) -> Optional[str]:
     if not settings.DMOJ_PDF_PROBLEM_CACHE:
@@ -211,3 +212,24 @@ def registration_user_registered(sender, user, request, **kwargs):
         with transaction.atomic():
             user.save()
             profile.save()
+
+
+@receiver(user_logged_in)
+def remove_other_sessions(sender, user, request, **kwargs):
+    # Prevent multiple logins by invalidating other sessions
+    if user is None:
+        return
+    # get current session key
+    current_session_key = request.session.session_key
+    # key for storing the active session key in cache
+    # using a prefix to avoid collision
+    cache_key = 'user_session_{}'.format(user.id)
+    last_session_key = cache.get(cache_key)
+    if last_session_key and last_session_key != current_session_key:
+        engine = import_module(settings.SESSION_ENGINE)
+        SessionStore = engine.SessionStore
+        s = SessionStore(session_key=last_session_key)
+        s.delete()
+    
+    # store the new session key
+    cache.set(cache_key, current_session_key)  

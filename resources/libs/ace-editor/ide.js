@@ -1,9 +1,9 @@
-const editor = ace.edit("editor2");
-const savedLanguage = localStorage.getItem("language") || "c";
-const savedTheme = localStorage.getItem("theme") || "textmate";
+var editor = ace.edit("editor2");
+var savedLanguage = localStorage.getItem("language") || "c";
+var savedTheme = localStorage.getItem("theme") || "textmate";
 editor.setShowPrintMargin(false);
 
-let languageCodeSamples = {
+var languageCodeSamples = {
     "c": "#include <stdio.h>\nint main() {\n    printf(\"Hello, World!\\n\");\n    return 0;\n}",
     "cpp": "#include <iostream>\nusing namespace std;\nint main() {\n    cout << \"Hello, World!\" << endl;\n    return 0;\n}",
     "java": "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, World!\");\n    }\n}",
@@ -14,7 +14,7 @@ let languageCodeSamples = {
     "scratch": "// Scratch is a visual programming language, no text code required"
 };
 
-let languageFileNames = {
+var languageFileNames = {
     "c": "main.c",
     "cpp": "main.cpp",
     "java": "Main.java",
@@ -32,17 +32,17 @@ document.getElementById("theme").addEventListener("change", function () {
 });
 
 document.getElementById("language").addEventListener("change", function () {
-    const selectedLang = this.value;
+    var selectedLang = this.value;
 
     if (selectedLang == 'c' || selectedLang == 'cpp') {
         editor.session.setMode("ace/mode/c_cpp");
     } else {
         editor.session.setMode("ace/mode/" + selectedLang);
-    };
+    }
 
     editor.setValue(languageCodeSamples[selectedLang]);
     editor.clearSelection();
-    const fileName = languageFileNames[selectedLang];
+    var fileName = languageFileNames[selectedLang];
     document.querySelector(".ace_wrapper .file-name").value = fileName;
     localStorage.setItem("language", selectedLang);
 });
@@ -66,23 +66,23 @@ if (this.value == 'c' || this.value == 'cpp') {
 
 
 function showTab(tabId) {
-    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(function(tab) { tab.classList.remove('active'); });
+    document.querySelectorAll('.tab-button').forEach(function(btn) { btn.classList.remove('active'); });
     document.getElementById(tabId).classList.add('active');
-    const index = tabId === 'input-tab' ? 0 : 1;
+    var index = tabId === 'input-tab' ? 0 : 1;
     document.querySelectorAll('.tab-button')[index].classList.add('active');
 }
 
-let terminal = document.getElementById("terminal");
-let input = document.getElementById("input");
+var terminal = document.getElementById("terminal");
+var input = document.getElementById("input");
 
 function saveFile() {
-    let code = editor.getValue();
-    let filename = document.querySelector('.ace_wrapper .file-name').value || "main.c";
+    var code = editor.getValue();
+    var filename = document.querySelector('.ace_wrapper .file-name').value || "main.c";
     if (!filename) return;
 
-    let blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
-    let link = document.createElement('a');
+    var blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+    var link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = filename;
     document.body.appendChild(link);
@@ -126,20 +126,20 @@ function showIde(){
     if (!toggledEl) {
         console.warn('[showIde] allowed-langs not found');
     } else {
-        const allowedLangsRaw = Array.from(toggledEl.childNodes)
-            .filter(node => node.nodeType === Node.TEXT_NODE || (node.tagName !== 'S'))
-            .map(node => node.textContent.trim().toLowerCase())
-            .flatMap(text => text.split(','))
-            .map(lang => lang.trim())
-            .filter(lang => lang);
+        var allowedLangsRaw = Array.from(toggledEl.childNodes)
+            .filter(function(node) { return node.nodeType === Node.TEXT_NODE || (node.tagName !== 'S'); })
+            .map(function(node) { return node.textContent.trim().toLowerCase(); })
+            .reduce(function(acc, text) { return acc.concat(text.split(',')); }, [])
+            .map(function(lang) { return lang.trim(); })
+            .filter(function(lang) { return lang; });
 
-        const allowedLangs = allowedLangsRaw
-            .map(name => langMap[name])
-            .filter(Boolean);
+        var allowedLangs = allowedLangsRaw
+            .map(function(name) { return langMap[name]; })
+            .filter(function(x) { return x; });
 
-        let foundAny = false;
-        Array.from(langSelect.options).forEach(option => {
-            const isAllowed = allowedLangs.includes(option.value);
+        var foundAny = false;
+        Array.from(langSelect.options).forEach(function(option) {
+            var isAllowed = allowedLangs.indexOf(option.value) !== -1;
             option.style.display = isAllowed ? '' : 'none';
             if (isAllowed) foundAny = true;
         });
@@ -148,25 +148,25 @@ function showIde(){
             disableEditorAndLangs(langSelect);
             console.warn('[showIde] No valid languages allowed!');
         } else {
-            const selected = langSelect.options[langSelect.selectedIndex];
+            var selected = langSelect.options[langSelect.selectedIndex];
             if (!selected || selected.style.display === 'none') {
-                const firstVisible = Array.from(langSelect.options).find(o => o.style.display !== 'none');
+                var firstVisible = Array.from(langSelect.options).find(function(o) { return o.style.display !== 'none'; });
                 if (firstVisible) {
-                    Array.from(langSelect.options).forEach(o => o.selected = false);
+                    Array.from(langSelect.options).forEach(function(o) { o.selected = false; });
                     firstVisible.selected = true;
                     langSelect.selectedIndex = Array.from(langSelect.options).indexOf(firstVisible);
                 }
             }
         }
     }
-    let selectedLanguageEditor = document.getElementById("language").value;
+    var selectedLanguageEditor = document.getElementById("language").value;
     editor.setValue(languageCodeSamples[selectedLanguageEditor]);
     editor.clearSelection();
     if (selectedLanguageEditor == 'c' || selectedLanguageEditor == 'cpp') {
         editor.session.setMode("ace/mode/c_cpp");
     } else {
         editor.session.setMode("ace/mode/" + selectedLanguageEditor);
-    };
+    }
 }
 
 function disableEditorAndLangs(langSelect) {
@@ -200,18 +200,17 @@ function hideIde(){
 }
 
 function runCode() {
-    let code = editor.getValue();
-    let inputText = input.value;
-    let submissionId = 'none';
-    const select = document.getElementById('language');
-    let languageSelectedText = select.options[select.selectedIndex].text.toUpperCase();
+    var code = editor.getValue();
+    var inputText = input.value;
+    var submissionId = 'none';
+    var select = document.getElementById('language');
+    var languageSelectedText = select.options[select.selectedIndex].text.toUpperCase();
     if(languageSelectedText == "C"){
         languageSelectedText = "CICPC";
     } else if(languageSelectedText == "CPP20"){
         languageSelectedText = "CPPICPC";
     }
     terminal.value = "Running code...\n";
-    // showTab('output-tab');
     document.querySelector('.ace_wrapper .submit-btn').classList.add('blur-disabled');
 
     fetch("/problem/run_code", {
@@ -225,57 +224,57 @@ function runCode() {
             stdin: inputText
         })
     })
-    .then(response => {
+    .then(function(response) {
         if (!response.ok) {
-            return response.json().then(errorData => {
+            return response.json().then(function(errorData) {
                 throw new Error(errorData.detail);
             });
         }
         return response.json();
     })
-    .then(data => {
+    .then(function(data) {
         if (data.error) {
             terminal.textContent = "Error: " + data.error;
             return;
         }
 
-        const channel = data.channel;
+        var channel = data.channel;
         submissionId = data.submission_id;
-        const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-        const wsHost = window.location.hostname;
-        const wsPort = 15100;
-        const ws = new WebSocket(`${wsProtocol}://${wsHost}:${wsPort}/`);
+        var wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+        var wsHost = window.location.hostname;
+        var wsPort = 15100;
+        var ws = new WebSocket(wsProtocol + "://" + wsHost + ":" + wsPort + "/");
 
-        ws.onopen = () => {
+        ws.onopen = function() {
             ws.send(JSON.stringify({
                 command: "set-filter",
                 filter: [channel]
             }));
         };
 
-        ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
+        ws.onmessage = function(event) {
+            var msg = JSON.parse(event.data);
 
             if (msg.message.type == 'on_test_case_ide'){
                 ws.close();
-                const resultData = msg.message.result.result;
+                var resultData = msg.message.result.result;
 
                 terminal.value = resultData.proc_output || "";
                 if (resultData.error) terminal.value += "\nError: " + resultData.error;
-                terminal.value += `\nElapsed Time: ${resultData.execution_time}s`;
-                terminal.value += `\nMemory Usage: ${resultData.max_memory} KB`;
+                terminal.value += "\nElapsed Time: " + resultData.execution_time + "s";
+                terminal.value += "\nMemory Usage: " + resultData.max_memory + " KB";
                 deleteSubmission(submissionId);
                 document.querySelector('.ace_wrapper .submit-btn').classList.remove('blur-disabled');
             } else if (msg.message.type == 'on_test_case_ide2') {
                 ws.close();
-                const resultData = msg.message.result;
+                var resultData = msg.message.result;
 
                 if (resultData.name === 'test-case-status' && resultData.cases && resultData.cases.length > 0) {
-                    const testCase = resultData.cases[0]; // Lấy case đầu tiên
+                    var testCase = resultData.cases[0]; // Lấy case đầu tiên
 
                     terminal.value = testCase.output || "";
-                    terminal.value += `\nElapsed Time: ${testCase.time}s`;
-                    terminal.value += `\nMemory Usage: ${testCase.memory} KB`;
+                    terminal.value += "\nElapsed Time: " + testCase.time + "s";
+                    terminal.value += "\nMemory Usage: " + testCase.memory + " KB";
                 } else {
                     terminal.value = "Compile Error!";
                 }
@@ -284,18 +283,18 @@ function runCode() {
 
             } else if (msg.message.type == 'ide-compile-error') {
                 ws.close();
-                const compileLog = msg.message.msg?.log || "Unknown Compile Error!";
+                var compileLog = (msg.message.msg && msg.message.msg.log) ? msg.message.msg.log : "Unknown Compile Error!";
                 terminal.value = "Compile Error:\n" + decodeAnsi(compileLog);
                 deleteSubmission(submissionId);
                 document.querySelector('.ace_wrapper .submit-btn').classList.remove('blur-disabled');
             }
         };
 
-        ws.onerror = () => {
+        ws.onerror = function() {
             terminal.value = "WebSocket connection error.";
         };
     })
-    .catch(error => {
+    .catch(function(error) {
         terminal.value = "Error: " + error.message;
     });
 }
@@ -307,18 +306,18 @@ function deleteSubmission(submissionId) {
             "Content-Type": "application/x-www-form-urlencoded",
             "X-CSRFToken": getCsrfToken()
         },
-        body: `id=${submissionId}`
+        body: "id=" + submissionId
     })
-    .then(response => response.json())
-    .then(data => {
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
         if (data.success) {
             return;
         } else {
-            console.warn(`⚠️ Failed to delete submission ${submissionId}:`, data.error || data.message);
+            console.warn('Failed to delete submission ' + submissionId + ':', data.error || data.message);
         }
     })
-    .catch(error => {
-        console.error(`❌ Error deleting submission ${submissionId}:`, error);
+    .catch(function(error) {
+        console.error('Error deleting submission ' + submissionId + ':', error);
     });
 }
 
@@ -336,11 +335,11 @@ function decodeAnsi(str) {
 }
 
 function formatCompileLog(log) {
-    return `=== Compile Error ===\n\n${log.trim()}`;
+    return "=== Compile Error ===\n\n" + log.trim();
 }
 
 function submitProblem() {
-    let sourceCode = editor.getValue();
+    var sourceCode = editor.getValue();
     var selectedLang = document.getElementById("language").value;
 
     var languageMap = {
@@ -369,32 +368,39 @@ function submitProblem() {
     ideLanguageSelect.appendChild(option);
 
     var currentPath = window.location.pathname;
-    if (!currentPath.endsWith('/')) {
+    if (currentPath.charAt(currentPath.length - 1) !== '/') {
         currentPath += '/';
     }
     var submitPath = currentPath + 'submit';
     document.getElementById("ide_submit_form").action = submitPath;
-    const form = document.getElementById("ide_submit_form");
+    var form = document.getElementById("ide_submit_form");
     form.submit();
 }
 
 function overrideJoinConfirm() {
-    const joinButtons = document.querySelectorAll('.first-join, .participate-button.join-warning');
+    var joinButtons = document.querySelectorAll('.first-join, .participate-button.join-warning');
     if (!joinButtons.length) return;
 
-    joinButtons.forEach(joinButton => {
-        $(joinButton).off('click');
+    for (var i = 0; i < joinButtons.length; i++) {
+        var joinButton = joinButtons[i];
+        if (typeof $ !== 'undefined') {
+            $(joinButton).off('click');
+        }
 
         joinButton.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopImmediatePropagation();
 
-            const form = joinButton.closest('form');
+            var form = this.closest('form');
             if (form) form.submit();
         }, true);
-    });
+    }
 }
 
-document.addEventListener('DOMContentLoaded', function () {
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+        overrideJoinConfirm();
+    });
+} else {
     overrideJoinConfirm();
-});
+}

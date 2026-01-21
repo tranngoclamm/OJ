@@ -153,6 +153,8 @@ class Judge(models.Model):
     problems = models.ManyToManyField('Problem', verbose_name=_('problems'), related_name='judges')
     runtimes = models.ManyToManyField(Language, verbose_name=_('judges'), related_name='judges')
 
+    is_lib = models.BooleanField(verbose_name=_('library judge'), default=True)
+
     def __str__(self):
         return self.name
 
@@ -172,7 +174,7 @@ class Judge(models.Model):
     def runtime_versions(cls):
         qs = (RuntimeVersion.objects.filter(judge__online=True)
               .values('judge__name', 'language__key', 'language__name', 'version', 'name')
-              .order_by('language__key', 'priority'))
+              .order_by('language__name', 'priority'))
 
         ret = defaultdict(OrderedDict)
 

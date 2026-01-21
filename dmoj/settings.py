@@ -2,10 +2,10 @@
 Django settings for dmoj project.
 
 For more information on this file, see
-https://docs.djangoproject.com/en/3.2/topics/settings/
+https://docs.djangoproject.com/en/4.2/topics/settings/
 
 For the full list of settings and their values, see
-https://docs.djangoproject.com/en/3.2/ref/settings/
+https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -17,12 +17,9 @@ from django_jinja.builtins import DEFAULT_EXTENSIONS
 from jinja2 import select_autoescape
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-STATIC_ROOT = os.path.join(BASE_DIR, 'static')
-COMPRESS_ROOT = STATIC_ROOT
-
 
 # Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/3.2/howto/deployment/checklist/
+# See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = '5*9f5q57mqmlz2#f$x1h76&jxy#yortjl1v+l*6hd18$d*yx#0'
@@ -231,10 +228,10 @@ DMOJ_USER_DATA_INTERNAL = ''
 DMOJ_USER_DATA_DOWNLOAD_RATELIMIT = datetime.timedelta(days=1)
 
 # Whether to allow contest authors to download contest data
-DMOJ_CONTEST_DATA_DOWNLOAD = False
-DMOJ_CONTEST_DATA_CACHE = ''
-DMOJ_CONTEST_DATA_INTERNAL = ''
+DMOJ_CONTEST_DATA_DOWNLOAD = True
 DMOJ_CONTEST_DATA_DOWNLOAD_RATELIMIT = datetime.timedelta(days=1)
+DMOJ_CONTEST_DATA_INTERNAL = '/contestdatacache'
+DMOJ_CONTEST_DATA_CACHE = '/home/rree/web/dmoj-uwsgi/contestdatacache'
 
 DMOJ_COMMENT_VOTE_HIDE_THRESHOLD = -5
 DMOJ_COMMENT_REPLY_TIMEFRAME = datetime.timedelta(days=365)
@@ -294,7 +291,7 @@ NOFOLLOW_EXCLUDED = set()
 TIMEZONE_MAP = 'https://static.dmoj.ca/assets/earth.jpg'
 
 TERMS_OF_SERVICE_URL = None
-DEFAULT_USER_LANGUAGE = 'CPP17'
+DEFAULT_USER_LANGUAGE = 'CPP20'
 
 INLINE_JQUERY = True
 INLINE_FONTAWESOME = True
@@ -399,41 +396,42 @@ else:
     }
 
 INSTALLED_APPS += (
+    'adminsortable2',
+    'compressor',
+    'django_ace',
+    'django_cleanup.apps.CleanupConfig',
+    'django_jinja',
+    'django_social_share',
     'django.contrib.admin',
-    'judge',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.flatpages',
-    'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.redirects',
-    'django.contrib.staticfiles',
-    'django.contrib.sites',
+    'django.contrib.sessions',
     'django.contrib.sitemaps',
-    'registration',
+    'django.contrib.sites',
+    'django.contrib.staticfiles',
+    'impersonate',
+    'judge',
+    'martor',
     'mptt',
+    'registration',
     'reversion',
-    'django_social_share',
     'social_django',
-    'compressor',
-    'django_ace',
     'sortedm2m',
     'statici18n',
-    'impersonate',
-    'django_jinja',
-    'martor',
-    'adminsortable2',
-    'django_cleanup.apps.CleanupConfig',
 )
 
 MIDDLEWARE = (
     'judge.middleware.ShortCircuitMiddleware',
-    'django.middleware.common.CommonMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'judge.middleware.APIMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'judge.middleware.IPBasedAuthMiddleware',
     'judge.middleware.MiscConfigMiddleware',
     'judge.middleware.DMOJLoginMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -640,9 +638,7 @@ MARKDOWN_STYLES = {
 MARTOR_ENABLE_CONFIGS = {
     'imgur': 'true',
     'mention': 'true',
-    'jquery': 'false',
     'living': 'false',
-    'spellcheck': 'false',
     'hljs': 'false',
 }
 MARTOR_MARKDOWNIFY_URL = '/widgets/preview/default'
@@ -664,7 +660,7 @@ SUBMISSION_FILE_UPLOAD_URL_PREFIX = '/submission_file'
 SUBMISSION_FILE_UPLOAD_MEDIA_DIR = 'submission_file'
 
 # Database
-# https://docs.djangoproject.com/en/3.2/ref/settings/#databases
+# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 DATABASES = {
     'default': {
@@ -695,21 +691,20 @@ EVENT_DAEMON_SUBMISSION_KEY = '6Sdmkx^%pk@GsifDfXcwX*Y7LRF%RGT8vmFpSxFBT$fwS7trc
 EVENT_DAEMON_CONTEST_KEY = '&w7hB-.9WnY2Jj^Qm+|?o6a<!}_2Wiw+?(_Yccqq{uR;:kWQP+3R<r(ICc|4^dDeEuJE{*D;Gg@K(4K>'
 
 # Internationalization
-# https://docs.djangoproject.com/en/3.2/topics/i18n/
+# https://docs.djangoproject.com/en/4.2/topics/i18n/
 
 # Whatever you do, this better be one of the entries in `LANGUAGES`.
 LANGUAGE_CODE = 'en'
 TIME_ZONE = 'UTC'
 DEFAULT_USER_TIME_ZONE = 'America/Toronto'
 USE_I18N = True
-USE_L10N = True
 USE_TZ = True
 
 # Cookies
 SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
 
 # Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/3.2/howto/static-files/
+# https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 DMOJ_RESOURCES = os.path.join(BASE_DIR, 'resources')
 STATICFILES_FINDERS = (
@@ -732,6 +727,8 @@ AUTHENTICATION_BACKENDS = (
     'django.contrib.auth.backends.ModelBackend',
     'judge.ip_auth.IPBasedAuthBackend',
 )
+
+REGISTRATION_OPEN = True
 
 SOCIAL_AUTH_PIPELINE = (
     'social_core.pipeline.social_auth.social_details',

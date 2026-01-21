@@ -18,6 +18,7 @@ from django.utils.functional import cached_property
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from fernet_fields import EncryptedCharField
+from django.contrib.sessions.models import Session
 from pyotp.utils import strings_equal
 from sortedm2m.fields import SortedManyToManyField
 
@@ -237,6 +238,7 @@ class Profile(models.Model):
     data_last_downloaded = models.DateTimeField(verbose_name=_('last data download time'), null=True, blank=True)
     username_display_override = models.CharField(max_length=100, blank=True, verbose_name=_('display name override'),
                                                  help_text=_('Name displayed in place of username.'))
+    sessionID = models.CharField(max_length=40, null=True, blank=True)
 
     @cached_property
     def organization(self):

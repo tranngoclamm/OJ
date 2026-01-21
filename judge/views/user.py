@@ -1,8 +1,7 @@
+import datetime
 import itertools
 import json
 import os
-from datetime import datetime
-from datetime import timedelta
 from operator import attrgetter, itemgetter
 
 import pytz
@@ -13,6 +12,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Permission, User
 from django.contrib.auth.views import LoginView, PasswordChangeView, PasswordResetView, redirect_to_login
 from django.contrib.contenttypes.models import ContentType
+from django.contrib.sessions.models import Session
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.db.models import Count, F, FilteredRelation, Max, Min, Prefetch, Q
@@ -172,7 +172,25 @@ class CustomLoginView(LoginView):
             self.request.session['password_pwned'] = True
         else:
             self.request.session['password_pwned'] = False
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        # Single session login
+
+        if self.request.user.is_authenticated:
+            try:
+                profile = self.request.user.profile
+                if profile.sessionID:
+                    Session.objects.filter(session_key=profile.sessionID).delete()
+                if not self.request.session.session_key:
+                    self.request.session.save()
+                profile.sessionID = self.request.session.session_key
+                if profile.sessionID is not None:
+                    profile.sessionID = self.request.session.session_key
+                    profile.save(update_fields=['sessionID'])
+            except Exception:
+                print(Exception)
+                pass
+        return response
+    
 
 
 class CustomPasswordChangeView(PasswordChangeView):
@@ -183,7 +201,7 @@ class CustomPasswordChangeView(PasswordChangeView):
         return super().form_valid(form)
 
 
-EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
 
 
 class UserAboutPage(UserPage):
@@ -208,11 +226,11 @@ class UserAboutPage(UserPage):
         user_timezone = settings.DEFAULT_USER_TIME_ZONE
         if self.request is not None and self.request.profile is not None:
             user_timezone = user_timezone or self.request.profile.timezone
-        timezone_offset = pytz.timezone(user_timezone).utcoffset(datetime.utcnow()).seconds
+        timezone_offset = pytz.timezone(user_timezone).utcoffset(datetime.datetime.utcnow()).seconds
 
         submissions = (
             self.object.submission_set
-            .annotate(date_only=Cast(F('date') + timedelta(seconds=timezone_offset), DateField()))
+            .annotate(date_only=Cast(F('date') + datetime.timedelta(seconds=timezone_offset), DateField()))
             .values('date_only').annotate(cnt=Count('id'))
         )
 

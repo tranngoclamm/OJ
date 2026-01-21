@@ -1116,6 +1116,7 @@ class RunCodeView(View):
         try:
             data = json.loads(request.body)
             language = Language.objects.get(key=data['language'])  
+            print("language", language)
             stdin = data.get('stdin', '')
             source_code = '###INPUT###\n' + stdin + '###CODE###\n' + data['source'] 
 
@@ -1123,7 +1124,7 @@ class RunCodeView(View):
 
             problem = get_object_or_404(Problem, code="run_ide")
             profile = request.profile
-
+            print("1127")
             # Check banned
             if not request.user.is_superuser and problem.banned_users.filter(id=profile.id).exists():
                 return JsonResponse({'error': _('You are banned from submitting to this problem.')}, status=403)
@@ -1163,7 +1164,7 @@ class RunCodeView(View):
                     ip,
                     submission.problem.code,
                 )
-
+            print("1167", submission.id)
             return JsonResponse({
                 'message': _('Submission successful'),
                 'submission_id': submission.id,
