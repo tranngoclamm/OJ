@@ -205,11 +205,8 @@ function runCode() {
     var submissionId = 'none';
     var select = document.getElementById('language');
     var languageSelectedText = select.options[select.selectedIndex].text.toUpperCase();
-    if(languageSelectedText == "C"){
-        languageSelectedText = "CICPC";
-    } else if(languageSelectedText == "CPP20"){
-        languageSelectedText = "CPPICPC";
-    }
+    let resultLocked = false;
+
     terminal.value = "Running code...\n";
     document.querySelector('.ace_wrapper .submit-btn').classList.add('blur-disabled');
 
@@ -255,18 +252,16 @@ function runCode() {
         ws.onmessage = function(event) {
             var msg = JSON.parse(event.data);
 
-            if (msg.message.type == 'on_test_case_ide'){
-                ws.close();
+            if (!resultLocked && msg.message.type == 'on_test_case_ide'){
+                resultLocked = true;
                 var resultData = msg.message.result.result;
 
                 terminal.value = resultData.proc_output || "";
                 if (resultData.error) terminal.value += "\nError: " + resultData.error;
                 terminal.value += "\nElapsed Time: " + resultData.execution_time + "s";
                 terminal.value += "\nMemory Usage: " + resultData.max_memory + " KB";
-                deleteSubmission(submissionId);
-                document.querySelector('.ace_wrapper .submit-btn').classList.remove('blur-disabled');
-            } else if (msg.message.type == 'on_test_case_ide2') {
-                ws.close();
+            } else if (!resultLocked && msg.message.type == 'on_test_case_ide2') {
+                resultLocked = true;
                 var resultData = msg.message.result;
 
                 if (resultData.name === 'test-case-status' && resultData.cases && resultData.cases.length > 0) {
@@ -278,13 +273,16 @@ function runCode() {
                 } else {
                     terminal.value = "Compile Error!";
                 }
-                deleteSubmission(submissionId);
-                document.querySelector('.ace_wrapper .submit-btn').classList.remove('blur-disabled');
-
             } else if (msg.message.type == 'ide-compile-error') {
                 ws.close();
                 var compileLog = (msg.message.msg && msg.message.msg.log) ? msg.message.msg.log : "Unknown Compile Error!";
                 terminal.value = "Compile Error:\n" + decodeAnsi(compileLog);
+                resultLocked = false;
+                deleteSubmission(submissionId);
+                document.querySelector('.ace_wrapper .submit-btn').classList.remove('blur-disabled');
+            } else if (msg.message.type == 'grading-end') {
+                ws.close();
+                resultLocked = false;
                 deleteSubmission(submissionId);
                 document.querySelector('.ace_wrapper .submit-btn').classList.remove('blur-disabled');
             }
