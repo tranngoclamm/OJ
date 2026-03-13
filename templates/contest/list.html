@@ -313,7 +313,8 @@
             <br>
         {% endif %}
         <br>
-
+        
+        {% if not (request.is_seb and not (request.user.is_staff or request.user.is_superuser)) %}
         <h4 id="past-contests">{{ _('Past contests') }}</h4>
         {% if page_obj or search_query %}
             <div class="top-pagination-bar">
@@ -374,6 +375,7 @@
         {% else %}
             <i>{{ _('There are no past contests.') }}</i>
             <br>
+        {% endif %}
         {% endif %}
     </div>
 {% endblock %}

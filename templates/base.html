@@ -218,10 +218,14 @@
         <a id="navicon" href="javascript:void(0)"><i class="fa fa-bars"></i></a>
         <ul id="nav-list">
             {% if request.organization is not defined %}
-                <!-- <li class="home-nav-element"><a href="{{ url('home') }}">{% include "site-logo-fragment.html" %}</a></li>
+                {% if not (request.is_seb and not (request.user.is_staff or request.user.is_superuser)) %}                            
+                <li class="home-nav-element"><a href="{{ url('home') }}">{% include "site-logo-fragment.html" %}</a></li>
                 <li class="home-nav-element"><span class="nav-divider"></span></li>
-                <li class="home-menu-item"><a href="{{ url('home') }}" class="nav-home">{{ _('Home') }}</a></li> -->
+                <li class="home-menu-item"><a href="{{ url('home') }}" class="nav-home">{{ _('Home') }}</a></li>
+                {% endif %}
                 {% for node in mptt_tree(nav_bar) recursive %}
+                    {% if not (request.is_seb and not request.user.is_staff) or node.key == "contest" %}
+
                     <li>
                         <a href="{{ node.path }}" class="nav-{{ node.key }}{% if node.key in nav_tab %} active{% endif %}">
                             {{ _(node.label) }}
@@ -233,6 +237,7 @@
                             {% if children %}<ul>{{ loop(children) }}</ul>{% endif %}
                         {% endwith %}
                     </li>
+                    {% endif %}
                 {% endfor %}
             {% else %}
                 {% macro make_navbar_item(key, url, text) %}
@@ -253,12 +258,16 @@
         </ul>
 
         <span id="user-links">
-            <a href=
+            <a 
+            {% if not (request.is_seb and not (request.user.is_staff or request.user.is_superuser)) %}
+                href= "
                 {% if request.resolver_match.view_name == "problem_detail" and problem %}
-                    "{{ url('new_problem_ticket', problem.code) }}"
+                    {{ url('new_problem_ticket', problem.code) }}
                 {% else %}
-                    "/tickets/new?issue_url={{ request.build_absolute_uri()|urlencode }}"
+                    /tickets/new?issue_url={{ request.build_absolute_uri()|urlencode }}
                 {% endif %}
+                "
+            {% endif %}
             style="margin-right: 5px;">
                 <span title="{{ _('Report issue') }}">
                     <i class="fa fa-exclamation-triangle" style="color: yellow;"></i>
@@ -273,7 +282,11 @@
             {% if request.user.is_authenticated %}
                 <ul>
                     <li>
-                        <a href="{{ url('user_page') }}">
+                        <a 
+                        {% if not (request.is_seb and not (request.user.is_staff or request.user.is_superuser)) %}
+                        href="{{ url('user_page') }}"
+                        {% endif %}
+                        >
                             <span>
                                 <img src="{{ gravatar(request.user, 32) }}" height="24" width="24">{# -#}
                                 <span>{{ _('Hello, %(username)s.', username=bold(request.user.first_name or request.profile.display_name)) }}</span>
@@ -283,16 +296,20 @@
                             {% if request.user.is_staff or request.user.is_superuser %}
                                 <li><a href="{{ url('admin:index') }}">{{ _('Admin') }}</a></li>
                             {% endif %}
+                            {% if not request.is_seb and not (request.user.is_staff or request.user.is_superuser) %}
                             <li><a href="{{ url('user_edit_profile') }}">{{ _('Edit profile') }}</a></li>
+                            {% endif %}
                             {% if request.user.is_impersonate %}
-                                <li><a href="{{ url('impersonate-stop') }}">{{ _('Stop impersonating') }}</a></li>
+                            <li><a href="{{ url('impersonate-stop') }}">{{ _('Stop impersonating') }}</a></li>
                             {% else %}
+                                {% if not (request.is_seb and request.in_contest and not (request.user.is_staff or request.user.is_superuser)) %}
                                 <li>
                                     <form action="{{ url('auth_logout') }}" method="POST">
                                         {% csrf_token %}
                                         <button type="submit">{{ _('Log out') }}</button>
                                     </form>
                                 </li>
+                                {% endif %}
                             {% endif %}
                         </ul>
                     </li>
@@ -305,6 +322,12 @@
                     <a href="{{ url('registration_register') }}"><b>{{ _('Sign up') }}</b></a>
                     {% endif %}
                 </span>
+            {% endif %}
+
+            {% if request.is_seb and (request.user.is_staff or (not request.in_contest and not (request.user.is_staff or request.user.is_superuser))) %}
+            <a href="/quit_seb" style="margin-left: 5px;font-size: 20px;">
+                <span><i class="fa fa-power-off" style="color: white;"></i></span>
+            </a>
             {% endif %}
         </span>
     </div>
@@ -450,7 +473,8 @@
 
     {% block bodyend %}{% endblock %}
 
-    <!-- <footer>
+    {% if not (request.is_seb and not (request.user.is_staff or request.user.is_superuser)) %}
+    <footer>
         <span id="footer-content">
             <br>
             {{_('proudly powered by %(dmoj)s', dmoj=safe('<a style="color: #808080" href="https://dmoj.ca"><b>DMOJ</b></a>'))}} |
@@ -464,7 +488,39 @@
             <input name="language" type="hidden" value="{{LANGUAGE_CODE}}">
           </form>
         </span>
-    </footer> --> 
+    </footer>
+    {% endif %}
+
+    {% if request.is_seb and not (request.user.is_staff or request.user.is_superuser) %}
+    <script>
+    function blockLinks(root=document){
+        root.querySelectorAll('a[href^="/user/"]').forEach(function(link){
+            link.removeAttribute("href");
+            link.style.pointerEvents="none";
+            link.style.cursor="default";
+        });
+    }
+
+    document.addEventListener("DOMContentLoaded", function(){
+        blockLinks();
+
+        const observer = new MutationObserver(function(mutations){
+            mutations.forEach(function(mutation){
+                mutation.addedNodes.forEach(function(node){
+                    if(node.nodeType === 1){
+                        blockLinks(node);
+                    }
+                });
+            });
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    });
+    </script>
+    {% endif %}
 </div>
 </body>
 </html>

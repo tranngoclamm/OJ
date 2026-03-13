@@ -40,7 +40,11 @@
 
 {% block body %}
     <div id="banner">
-        <a class="date">
+        <a
+            {% if not (request.is_seb and not (request.user.is_staff or request.user.is_superuser)) %}
+            href="https://www.timeanddate.com/worldclock/fixedtime.html?msg={{ contest.name|urlquote('') }}&amp;iso={{ (contest.start_time if contest.start_time >= now else contest.end_time)|utc|date('Y-m-d\TH:i:s') }}"
+            {% endif %}
+            class="date">
             {%- if is_in_contest and not request.participation.live -%}
                 {% if request.participation.spectate %}
                     {{- _('Spectating, contest ends in %(countdown)s.', countdown=as_countdown(contest.time_before_end)) -}}
@@ -338,11 +342,12 @@
     </div>
 
     <hr>
-    <!-- <span class="social">
+    {% if not (request.is_seb and not (request.user.is_staff or request.user.is_superuser)) %}
+    <span class="social">
         {{ post_to_facebook(request, contest, '<i class="fa fa-facebook-official"></i>') }}
         {{ post_to_twitter(request, SITE_NAME + ':', contest, '<i class="fa fa-twitter"></i>') }}
-    </span> -->
-
+    </span>
+    {% endif %}
 
     {% if not comment_lock %}
         {% include "comments/list.html" %}
