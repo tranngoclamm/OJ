@@ -22,12 +22,10 @@ from django.utils.translation import gettext_lazy as _, ngettext_lazy
 
 from django_ace import AceWidget
 from judge.models import BlogPost, Contest, ContestAnnouncement, ContestProblem, Language, LanguageLimit, \
-    Organization, Problem, Profile, Solution, Submission, Tag, WebAuthnCredential
+    Organization, Problem, Profile, Solution, Submission, Tag, WebAuthnCredential, ContestTag
 from judge.utils.subscription import newsletter_id
 from judge.widgets import HeavySelect2MultipleWidget, HeavySelect2Widget, MartorWidget, \
     Select2MultipleWidget, Select2Widget
-from judge.models.exam_access import ExamAccess
-
 TOTP_CODE_LENGTH = 6
 
 two_factor_validators_by_length = {
@@ -543,12 +541,6 @@ class CustomAuthenticationForm(AuthenticationForm, SocialAuthMixin):
                 _('This account has been banned. Reason: %s') % user.profile.ban_reason,
                 code='banned',
             )
-    
-        # if user.profile.sessionID and not user.is_superuser:
-        #     raise forms.ValidationError(
-        #         _('This account has been logged in other device'), code='session_exists',
-        #     )
-        
         super(CustomAuthenticationForm, self).confirm_login_allowed(user)
 
 
@@ -760,14 +752,12 @@ class ContestForm(ModelForm):
         help_text=_('If selected, the contest will only be accessible via the internal SEB.'),
     )
 
-    exam_organization = forms.ModelChoiceField(
-        label=_('Participating organization'),
-        queryset=Organization.objects.none(),
-       required=False,
-        widget=Select2Widget(),
-        help_text=_('Select the organization participating in the exam.'),
+    create_exam_accounts = forms.BooleanField(
+        label=_('Create new exam accounts'),
+        required=False,
+        help_text=_('Create new accounts based on members of this organization.'),
     )
-    
+
     def __init__(self, *args, **kwargs):
         self.org_pk = org_pk = kwargs.pop('org_pk', None)
         self.user = kwargs.pop('user', None)
@@ -786,16 +776,14 @@ class ContestForm(ModelForm):
             str(_('You can paste a list of usernames into this box.'))
         if self.instance and self.instance.pk:
             self.fields['is_exam'].disabled = True
-            self.fields['exam_organization'].disabled = True
-            # Truy vấn ExamAccess để gán initial
-            access_qs = ExamAccess.objects.filter(contest=self.instance)
-            if access_qs.exists():
-                self.fields['is_exam'].initial = True
-                self.fields['exam_organization'].initial = access_qs.first().organization_id
+            self.fields.pop('create_exam_accounts')
 
-        self.fields['exam_organization'].queryset = Organization.objects.filter(is_unlisted=False)
-        if not self.data.get('is_exam') and not (self.instance and self.instance.pk and getattr(self.instance, 'is_exam', False)):
-            self.fields['exam_organization'].widget.attrs['disabled'] = 'disabled'
+            if self.instance.tags.filter(name="exam").exists():
+                self.fields['is_exam'].initial = True
+
+        if not org_pk:
+            self.fields.pop("is_exam", None)
+            self.fields.pop("create_exam_accounts", None)
 
     def clean(self):
         cleaned_data = super().clean()
@@ -809,12 +797,6 @@ class ContestForm(ModelForm):
                                         % settings.VNOJ_CONTEST_DURATION_LIMIT,
                                         'contest_duration_too_long')
         
-        # Nếu là kỳ thi thì phải có tổ chức
-        is_exam = cleaned_data.get('is_exam')
-        exam_org = cleaned_data.get('exam_organization')
-        if is_exam and not exam_org:
-            self.add_error('exam_organization', _('Organization is required for an exam.'))
-
         return cleaned_data
 
 
@@ -845,7 +827,7 @@ class ContestForm(ModelForm):
             'is_private',
             'private_contestants',
             'is_exam',
-            'exam_organization',
+            'create_exam_accounts',
         ]
 
         widgets = {

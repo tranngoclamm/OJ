@@ -1,6 +1,8 @@
 import json
 import os
 import hashlib
+import base64
+from cryptography.fernet import Fernet
 from calendar import Calendar, SUNDAY
 from collections import defaultdict, namedtuple
 from datetime import date, datetime, time, timedelta
@@ -34,6 +36,7 @@ from django.views.generic.edit import CreateView, UpdateView
 from django.views.generic.list import BaseListView
 from icalendar import Calendar as ICalendar, Event
 from reversion import revisions
+from urllib3 import request
 
 from judge.comments import CommentedDetailView
 from judge.contest_format import ICPCContestFormat
@@ -51,6 +54,8 @@ from judge.utils.stats import get_bar_chart, get_pie_chart, get_stacked_bar_char
 from judge.utils.views import DiggPaginatorMixin, QueryStringSortMixin, SingleObjectFormView, TitleMixin, \
     add_file_response, generic_message
 from judge.views.register import RegistrationForm
+from judge.views.seb import SEBRequiredMixin
+
 
 __all__ = ['ContestList', 'ContestDetail', 'ContestRanking', 'ContestJoin', 'ContestLeave', 'ContestCalendar',
            'ContestClone', 'ContestStats', 'ContestMossView', 'ContestMossDelete',
@@ -273,11 +278,10 @@ class ContestMixin(object):
         except PermissionDenied as e:
             return generic_message(request, _('Permission denied'), e)
 
-from judge.models.exam_access import ExamAccess
 from django.conf import settings
 from django.shortcuts import render
 
-class ContestDetail(ContestMixin, TitleMixin, CommentedDetailView):
+class ContestDetail(SEBRequiredMixin, ContestMixin, TitleMixin, CommentedDetailView):
     template_name = 'contest/contest.html'
 
     def is_comment_locked(self):
@@ -351,20 +355,9 @@ class ContestDetail(ContestMixin, TitleMixin, CommentedDetailView):
         user = request.user
         if user.is_authenticated:
             contest = self.get_object()
-            if ExamAccess.objects.filter(contest_id=contest.id, user_id=user.id).exists():
-                # Kỳ thi đặc biệt → yêu cầu header SEB
-                seb_hash = request.headers.get('X-SafeExamBrowser-RequestHash')
-                browser_exam_keys = getattr(settings, 'SEB_BROWSER_KEYS', [])
-                if not seb_hash:
-                    return render(request, 'errors/seb_forbidden.html', status=403)
-
-                absolute_url = request.build_absolute_uri()
-                for bek in browser_exam_keys:  # danh sách các BEK hợp lệ
-                    expected = hashlib.sha256((absolute_url + bek).encode()).hexdigest()
-                    if expected == seb_hash:
-                        return super().dispatch(request, *args, **kwargs)
-                return render(request, 'errors/seb_forbidden.html', status=403)
-
+            response = self.seb_check(request, contest)
+            if response:
+                return response
         return super().dispatch(request, *args, **kwargs)
 
 
@@ -561,7 +554,7 @@ class ContestRegister(LoginRequiredMixin, ContestMixin, SingleObjectMixin, View)
         })
 
 
-class ContestJoin(LoginRequiredMixin, ContestMixin, SingleObjectMixin, View):
+class ContestJoin(LoginRequiredMixin, SEBRequiredMixin, ContestMixin, SingleObjectMixin, View):
     def get(self, request, *args, **kwargs):
         self.object = self.get_object()
         return self.ask_for_access_code()
@@ -675,6 +668,16 @@ class ContestJoin(LoginRequiredMixin, ContestMixin, SingleObjectMixin, View):
             'title': _('Enter access code for "%s"') % contest.name,
         })
 
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        user = request.user
+
+        if user.is_authenticated:
+            contest = self.get_object()
+            response = self.seb_check(request, contest)
+            if response:
+                return response
+        return super().dispatch(request, *args, **kwargs)
 
 class ContestLeave(LoginRequiredMixin, ContestMixin, SingleObjectMixin, View):
     def dispatch(self, request, *args, **kwargs):
@@ -686,6 +689,9 @@ class ContestLeave(LoginRequiredMixin, ContestMixin, SingleObjectMixin, View):
     def post(self, request, *args, **kwargs):
         contest = self.get_object()
 
+        if request.is_seb and not (request.user.is_staff or request.user.is_superuser):
+            return HttpResponseForbidden("Cannot leave contest while using SEB.")
+        
         profile = request.profile
         if profile.current_contest is None or profile.current_contest.contest_id != contest.id:
             return generic_message(request, _('No such contest'),
@@ -1255,6 +1261,7 @@ class ContestTagDetail(TitleMixin, ContestTagDetailAjax):
     def get_title(self):
         return _('Contest tag: %s') % self.object.name
 
+
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
 from docx import Document
@@ -1267,7 +1274,6 @@ def random_upper(length):
 from io import BytesIO
 from django.http import HttpResponse
 from copy import deepcopy 
-from judge.models.exam_access import ExamAccess
 from django.http import FileResponse
 
 import threading
@@ -1353,8 +1359,9 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
         self.object = None
         post_data = request.POST.copy()
         is_exam = post_data.pop('is_exam', False)
-        organization_id = post_data.pop('exam_organization', [None])
-        organization_id = organization_id[0]
+        # organization_id = post_data.pop('exam_organization', [None])[0]
+        create_accounts = post_data.pop('create_exam_accounts', False)
+        # auto_export = post_data.pop('auto_export', False)
         form = ContestForm(post_data, instance=self.object)
         form_set = self.get_contest_problem_formset()
 
@@ -1364,69 +1371,86 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
                 for problem in form_set.save(commit=False):
                     problem.contest = self.object
                     problem.save()
-
                 revisions.set_comment(_('Created on site'))
                 revisions.set_user(self.request.user)
             on_new_contest.delay(self.object.key)
-            if organization_id and is_exam:
+
+            if is_exam:
+                tag, created = ContestTag.objects.get_or_create(name="exam")
+                self.object.tags.add(tag)
+
+            # if auto_export:
+            #     schedule_auto_export.delay(self.object.id)
+
+            if create_accounts and is_exam:
                 try:
-                    organization = Organization.objects.get(pk=organization_id)
-                    problems = self.object.problems.all()
-                    members = organization.members.filter(is_unlisted=False).select_related('user')
+                    # organization = Organization.objects.get(pk=organization_id)
+                    # organization = Organization.objects.get(pk=self.kwargs['org_pk'])
+                    organization = Organization.objects.get(slug=self.kwargs['slug'])       
+                    self.object.organizations.add(organization)
+                    problems = list(self.object.problems.all())
+                    # members = list(organization.members.filter(is_unlisted=False).select_related('user'))
+                    members = list(organization.members.filter(is_unlisted=False).exclude(user__username__regex=r'^[A-Z]{4}_').select_related('user'))
+                    base_usernames = [m.user.username for m in members if not m.user.is_staff]
+                    # print("1451", members)
+                    random_prefixes = [random_upper(4) for _ in base_usernames]
+                    new_usernames = [f"{prefix}_{username}" for prefix, username in zip(random_prefixes, base_usernames)]
+                    existing_usernames = set(get_user_model().objects.filter(username__in=new_usernames).values_list('username', flat=True))
+                    username_map = {}
+
+                    for base_username in base_usernames:
+                        new_username = f"{random_upper(4)}_{base_username}"
+                        while new_username in existing_usernames or new_username in username_map.values():
+                            new_username = f"{random_upper(4)}_{base_username}"
+                        username_map[base_username] = new_username
+                        existing_usernames.add(new_username)
+
+                    new_users = []
+                    profiles = []
                     new_accounts = []
+                    
+                    SECRET_KEY = settings.SECRET_KEY
+                    def get_fernet_key(secret):
+                        key = hashlib.sha256(secret.encode()).digest()
+                        return base64.urlsafe_b64encode(key)
+                        
+                    fernet = Fernet(get_fernet_key(SECRET_KEY))
+                    with open("config/prehashed_p.encrypted", "rb") as f:
+                        encrypted_data = f.read()
+                    decrypted = fernet.decrypt(encrypted_data).decode()
+                    password_pool = json.loads(decrypted)
+
                     for member in members:
                         old_user = member.user
-                        if(old_user.is_staff == False):
-                        
-                            base_username = old_user.username
-                            new_username = f"{random_upper(4)}_{base_username}"
+                        if not old_user.is_staff:
+                            new_username = username_map[old_user.username]
+                            selected = random.choice(password_pool)
+                            raw_password = selected["raw"]
+                            hashed_password = selected["hashed"]
+                            new_user = get_user_model()(
+                                username=new_username,
+                                password=hashed_password,
+                            )
+                            new_users.append(new_user)
+                            profiles.append(Profile(user=new_user, timezone=member.timezone, language=member.language))
+                            new_accounts.append((new_username, raw_password))
+                    
+                    get_user_model().objects.bulk_create(new_users)
+                    Profile.objects.bulk_create(profiles)
+                  
+                    for profile in profiles:
+                        profile.organizations.add(organization)
 
-                            while get_user_model().objects.filter(username=new_username).exists():
-                                new_username = f"{random_upper(4)}_{base_username}"
-                            password = random_upper(8)
-                            form_data = {
-                                'username': new_username,
-                                'password1': password,
-                                'password2': password,
-                                'full_name': old_user.get_full_name(),
-                                'timezone': member.timezone,
-                                'language': member.language.id,
-                                'organizations': "",
-                                'newsletter': False,
-                                'email': old_user.email or f"{slugify(new_username)}@example.com",
-                                'tos': True,
-                            }
-
-                            registration_form = RegistrationForm(data=form_data)
-                            if registration_form.is_valid():
-                                new_user = registration_form.save()
-                                from judge.models import Profile  
-
-                                if not hasattr(new_user, 'judgeprofile'):
-                                    Profile.objects.create(user=new_user)
-                                new_accounts.append((new_username, password))
-                                self.object.private_contestants.add(new_user.profile)
-                            else:
-                                print(f"Lỗi đăng ký {new_username}: {registration_form.errors}")
-                            
-                            user = member.user
-                            for problem in problems:
-                                ExamAccess.objects.update_or_create(
-                                    contest=self.object,
-                                    problem=problem,
-                                    organization=organization,
-                                    user=new_user
-                                )
-
+                    self.object.private_contestants.add(*profiles)
                     link_download = export_accounts_to_docx(new_accounts, f'{organization.slug}_{self.object}')
                     request.session['account_docx_path'] = link_download
                 except Organization.DoesNotExist:
-                        organization = None
+                    print("[ERROR] Không tìm thấy tổ chức.")
+                    organization = None
             return HttpResponseRedirect(self.get_success_url())
         else:
             return self.render_to_response(self.get_context_data(*args, **kwargs))
-
-
+    
     def dispatch(self, request, *args, **kwargs):
         try:
             return super().dispatch(request, *args, **kwargs)

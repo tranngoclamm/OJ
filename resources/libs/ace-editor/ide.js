@@ -1,9 +1,9 @@
-var editor = ace.edit("editor2");
-var savedLanguage = localStorage.getItem("language") || "c";
-var savedTheme = localStorage.getItem("theme") || "textmate";
+const editor = ace.edit("editor2");
+const savedLanguage = localStorage.getItem("language") || "c";
+const savedTheme = localStorage.getItem("theme") || "textmate";
 editor.setShowPrintMargin(false);
 
-var languageCodeSamples = {
+let languageCodeSamples = {
     "c": "#include <stdio.h>\nint main() {\n    printf(\"Hello, World!\\n\");\n    return 0;\n}",
     "cpp": "#include <iostream>\nusing namespace std;\nint main() {\n    cout << \"Hello, World!\" << endl;\n    return 0;\n}",
     "java": "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, World!\");\n    }\n}",
@@ -14,7 +14,7 @@ var languageCodeSamples = {
     "scratch": "// Scratch is a visual programming language, no text code required"
 };
 
-var languageFileNames = {
+let languageFileNames = {
     "c": "main.c",
     "cpp": "main.cpp",
     "java": "Main.java",
@@ -32,17 +32,17 @@ document.getElementById("theme").addEventListener("change", function () {
 });
 
 document.getElementById("language").addEventListener("change", function () {
-    var selectedLang = this.value;
+    const selectedLang = this.value;
 
     if (selectedLang == 'c' || selectedLang == 'cpp') {
         editor.session.setMode("ace/mode/c_cpp");
     } else {
         editor.session.setMode("ace/mode/" + selectedLang);
-    }
+    };
 
     editor.setValue(languageCodeSamples[selectedLang]);
     editor.clearSelection();
-    var fileName = languageFileNames[selectedLang];
+    const fileName = languageFileNames[selectedLang];
     document.querySelector(".ace_wrapper .file-name").value = fileName;
     localStorage.setItem("language", selectedLang);
 });
@@ -66,23 +66,23 @@ if (this.value == 'c' || this.value == 'cpp') {
 
 
 function showTab(tabId) {
-    document.querySelectorAll('.tab-content').forEach(function(tab) { tab.classList.remove('active'); });
-    document.querySelectorAll('.tab-button').forEach(function(btn) { btn.classList.remove('active'); });
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
     document.getElementById(tabId).classList.add('active');
-    var index = tabId === 'input-tab' ? 0 : 1;
+    const index = tabId === 'input-tab' ? 0 : 1;
     document.querySelectorAll('.tab-button')[index].classList.add('active');
 }
 
-var terminal = document.getElementById("terminal");
-var input = document.getElementById("input");
+let terminal = document.getElementById("terminal");
+let input = document.getElementById("input");
 
 function saveFile() {
-    var code = editor.getValue();
-    var filename = document.querySelector('.ace_wrapper .file-name').value || "main.c";
+    let code = editor.getValue();
+    let filename = document.querySelector('.ace_wrapper .file-name').value || "main.c";
     if (!filename) return;
 
-    var blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
-    var link = document.createElement('a');
+    let blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+    let link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = filename;
     document.body.appendChild(link);
@@ -126,20 +126,20 @@ function showIde(){
     if (!toggledEl) {
         console.warn('[showIde] allowed-langs not found');
     } else {
-        var allowedLangsRaw = Array.from(toggledEl.childNodes)
-            .filter(function(node) { return node.nodeType === Node.TEXT_NODE || (node.tagName !== 'S'); })
-            .map(function(node) { return node.textContent.trim().toLowerCase(); })
-            .reduce(function(acc, text) { return acc.concat(text.split(',')); }, [])
-            .map(function(lang) { return lang.trim(); })
-            .filter(function(lang) { return lang; });
+        const allowedLangsRaw = Array.from(toggledEl.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE || (node.tagName !== 'S'))
+            .map(node => node.textContent.trim().toLowerCase())
+            .flatMap(text => text.split(','))
+            .map(lang => lang.trim())
+            .filter(lang => lang);
 
-        var allowedLangs = allowedLangsRaw
-            .map(function(name) { return langMap[name]; })
-            .filter(function(x) { return x; });
+        const allowedLangs = allowedLangsRaw
+            .map(name => langMap[name])
+            .filter(Boolean);
 
-        var foundAny = false;
-        Array.from(langSelect.options).forEach(function(option) {
-            var isAllowed = allowedLangs.indexOf(option.value) !== -1;
+        let foundAny = false;
+        Array.from(langSelect.options).forEach(option => {
+            const isAllowed = allowedLangs.includes(option.value);
             option.style.display = isAllowed ? '' : 'none';
             if (isAllowed) foundAny = true;
         });
@@ -148,25 +148,25 @@ function showIde(){
             disableEditorAndLangs(langSelect);
             console.warn('[showIde] No valid languages allowed!');
         } else {
-            var selected = langSelect.options[langSelect.selectedIndex];
+            const selected = langSelect.options[langSelect.selectedIndex];
             if (!selected || selected.style.display === 'none') {
-                var firstVisible = Array.from(langSelect.options).find(function(o) { return o.style.display !== 'none'; });
+                const firstVisible = Array.from(langSelect.options).find(o => o.style.display !== 'none');
                 if (firstVisible) {
-                    Array.from(langSelect.options).forEach(function(o) { o.selected = false; });
+                    Array.from(langSelect.options).forEach(o => o.selected = false);
                     firstVisible.selected = true;
                     langSelect.selectedIndex = Array.from(langSelect.options).indexOf(firstVisible);
                 }
             }
         }
     }
-    var selectedLanguageEditor = document.getElementById("language").value;
+    let selectedLanguageEditor = document.getElementById("language").value;
     editor.setValue(languageCodeSamples[selectedLanguageEditor]);
     editor.clearSelection();
     if (selectedLanguageEditor == 'c' || selectedLanguageEditor == 'cpp') {
         editor.session.setMode("ace/mode/c_cpp");
     } else {
         editor.session.setMode("ace/mode/" + selectedLanguageEditor);
-    }
+    };
 }
 
 function disableEditorAndLangs(langSelect) {
@@ -304,18 +304,18 @@ function deleteSubmission(submissionId) {
             "Content-Type": "application/x-www-form-urlencoded",
             "X-CSRFToken": getCsrfToken()
         },
-        body: "id=" + submissionId
+        body: `id=${submissionId}`
     })
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
+    .then(response => response.json())
+    .then(data => {
         if (data.success) {
             return;
         } else {
-            console.warn('Failed to delete submission ' + submissionId + ':', data.error || data.message);
+            console.warn(`⚠️ Failed to delete submission ${submissionId}:`, data.error || data.message);
         }
     })
-    .catch(function(error) {
-        console.error('Error deleting submission ' + submissionId + ':', error);
+    .catch(error => {
+        console.error(`❌ Error deleting submission ${submissionId}:`, error);
     });
 }
 
@@ -333,11 +333,11 @@ function decodeAnsi(str) {
 }
 
 function formatCompileLog(log) {
-    return "=== Compile Error ===\n\n" + log.trim();
+    return `=== Compile Error ===\n\n${log.trim()}`;
 }
 
 function submitProblem() {
-    var sourceCode = editor.getValue();
+    let sourceCode = editor.getValue();
     var selectedLang = document.getElementById("language").value;
 
     var languageMap = {
@@ -366,39 +366,32 @@ function submitProblem() {
     ideLanguageSelect.appendChild(option);
 
     var currentPath = window.location.pathname;
-    if (currentPath.charAt(currentPath.length - 1) !== '/') {
+    if (!currentPath.endsWith('/')) {
         currentPath += '/';
     }
     var submitPath = currentPath + 'submit';
     document.getElementById("ide_submit_form").action = submitPath;
-    var form = document.getElementById("ide_submit_form");
+    const form = document.getElementById("ide_submit_form");
     form.submit();
 }
 
 function overrideJoinConfirm() {
-    var joinButtons = document.querySelectorAll('.first-join, .participate-button.join-warning');
+    const joinButtons = document.querySelectorAll('.first-join, .participate-button.join-warning');
     if (!joinButtons.length) return;
 
-    for (var i = 0; i < joinButtons.length; i++) {
-        var joinButton = joinButtons[i];
-        if (typeof $ !== 'undefined') {
-            $(joinButton).off('click');
-        }
+    joinButtons.forEach(joinButton => {
+        $(joinButton).off('click');
 
         joinButton.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopImmediatePropagation();
 
-            var form = this.closest('form');
+            const form = joinButton.closest('form');
             if (form) form.submit();
         }, true);
-    }
+    });
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () {
-        overrideJoinConfirm();
-    });
-} else {
+document.addEventListener('DOMContentLoaded', function () {
     overrideJoinConfirm();
-}
+});

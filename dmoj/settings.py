@@ -211,7 +211,7 @@ DMOJ_EMAIL_THROTTLING = (10, 60)
 VNOJ_DISCORD_WEBHOOK_THROTTLING = (10, 60)  # Max 10 messages in 60 seconds
 
 # Maximum number of submissions a single user can queue without the `spam_submission` permission
-DMOJ_SUBMISSION_LIMIT = 2
+DMOJ_SUBMISSION_LIMIT = 3
 DMOJ_SUBMISSIONS_REJUDGE_LIMIT = 10
 
 # Whether to allow users to view source code: 'all' | 'all-solved' | 'only-own'
@@ -444,6 +444,8 @@ MIDDLEWARE = (
     'django.contrib.flatpages.middleware.FlatpageFallbackMiddleware',
     'judge.social_auth.SocialAuthExceptionMiddleware',
     'django.contrib.redirects.middleware.RedirectFallbackMiddleware',
+    'judge.middleware.SEBMiddleware',
+
 )
 
 IMPERSONATE_REQUIRE_SUPERUSER = True

@@ -45,6 +45,7 @@ from judge.utils.strings import safe_float_or_none, safe_int_or_none
 from judge.utils.tickets import own_ticket_filter
 from judge.utils.views import QueryStringSortMixin, SingleObjectFormView, TitleMixin, add_file_response, generic_message
 from judge.views.widgets import pdf_statement_uploader, submission_uploader
+from judge.views.seb import SEBRequiredMixin
 
 from django.http import JsonResponse
 
@@ -54,6 +55,7 @@ from django.views.decorators.csrf import csrf_exempt
 from judge.judgeapi import judge_request
 from judge.bridge.judge_list import JudgeList
 import websocket 
+
 recjk = re.compile(r'[\u2E80-\u2E99\u2E9B-\u2EF3\u2F00-\u2FD5\u3005\u3007\u3021-\u3029\u3038-\u303A\u303B\u3400-\u4DB5'
                    r'\u4E00-\u9FC3\uF900-\uFA2D\uFA30-\uFA6A\uFA70-\uFAD9\U00020000-\U0002A6D6\U0002F800-\U0002FA1D]')
 
@@ -175,12 +177,11 @@ class ProblemRaw(ProblemMixin, TitleMixin, TemplateResponseMixin, SingleObjectMi
                 object=self.object,
             ))
 
-from judge.models.exam_access import ExamAccess
 from django.conf import settings
 from django.shortcuts import render
 import hashlib
 
-class ProblemDetail(ProblemMixin, SolvedProblemMixin, CommentedDetailView):
+class ProblemDetail(SEBRequiredMixin, ProblemMixin, SolvedProblemMixin, CommentedDetailView):
     context_object_name = 'problem'
     template_name = 'problem/problem.html'
 
@@ -265,20 +266,11 @@ class ProblemDetail(ProblemMixin, SolvedProblemMixin, CommentedDetailView):
         user = request.user
         if user.is_authenticated:
             problem = self.get_object()
-            if ExamAccess.objects.filter(problem_id=problem.id, user_id=user.id).exists():
-                # Kỳ thi đặc biệt → yêu cầu header SEB
-                seb_hash = request.headers.get('X-SafeExamBrowser-RequestHash')
-                browser_exam_keys = getattr(settings, 'SEB_BROWSER_KEYS', [])
-                if not seb_hash:
-                    return render(request, 'errors/seb_forbidden.html', status=403)
-
-                absolute_url = request.build_absolute_uri()
-                for bek in browser_exam_keys:  # danh sách các BEK hợp lệ
-                    expected = hashlib.sha256((absolute_url + bek).encode()).hexdigest()
-                    if expected == seb_hash:
-                        return super().dispatch(request, *args, **kwargs)
-                return render(request, 'errors/seb_forbidden.html', status=403)
-
+            contest_problem = self.contest_problem
+            if contest_problem:
+                response = self.seb_check(request, contest_problem.contest)
+                if response:
+                    return response
         return super().dispatch(request, *args, **kwargs)
 
 class LatexError(Exception):
@@ -588,7 +580,7 @@ user_logger = logging.getLogger('judge.user')
 user_submit_ip_logger = logging.getLogger('judge.user_submit_ip_logger')
 
 
-class ProblemSubmit(LoginRequiredMixin, ProblemMixin, TitleMixin, SingleObjectFormView):
+class ProblemSubmit(LoginRequiredMixin, SEBRequiredMixin, ProblemMixin, TitleMixin, SingleObjectFormView):
     template_name = 'problem/submit.html'
     form_class = ProblemSubmitForm
 
@@ -786,6 +778,7 @@ class ProblemSubmit(LoginRequiredMixin, ProblemMixin, TitleMixin, SingleObjectFo
             )
 
     def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
         submission_id = kwargs.get('submission')
         if submission_id is not None:
             self.old_submission = get_object_or_404(
@@ -799,6 +792,14 @@ class ProblemSubmit(LoginRequiredMixin, ProblemMixin, TitleMixin, SingleObjectFo
         else:
             self.old_submission = None
 
+        user = request.user
+        if user.is_authenticated:
+            contest_problem = self.contest_problem
+
+            if contest_problem:
+                response = self.seb_check(request, contest_problem.contest)
+                if response:
+                    return response
         return super().dispatch(request, *args, **kwargs)
 
 
@@ -1116,7 +1117,6 @@ class RunCodeView(View):
         try:
             data = json.loads(request.body)
             language = Language.objects.get(key=data['language'])  
-            print("language", language)
             stdin = data.get('stdin', '')
             source_code = '###INPUT###\n' + stdin + '###CODE###\n' + data['source'] 
 
@@ -1124,7 +1124,6 @@ class RunCodeView(View):
 
             problem = get_object_or_404(Problem, code="run_ide")
             profile = request.profile
-            print("1127")
             # Check banned
             if not request.user.is_superuser and problem.banned_users.filter(id=profile.id).exists():
                 return JsonResponse({'error': _('You are banned from submitting to this problem.')}, status=403)
@@ -1164,7 +1163,6 @@ class RunCodeView(View):
                     ip,
                     submission.problem.code,
                 )
-            print("1167", submission.id)
             return JsonResponse({
                 'message': _('Submission successful'),
                 'submission_id': submission.id,

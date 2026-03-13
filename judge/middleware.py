@@ -250,3 +250,16 @@ class OrganizationSubdomainMiddleware(object):
             # inject the logo override image into the template context
             response.context_data['logo_override_image'] = request.organization.logo_override_image
         return response
+
+
+class SEBMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+
+        request.is_seb = bool(
+            request.headers.get('X-SafeExamBrowser-ConfigKeyHash')
+        )
+
+        return self.get_response(request)

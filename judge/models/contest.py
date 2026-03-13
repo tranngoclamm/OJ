@@ -199,6 +199,10 @@ class Contest(models.Model):
     is_kt = models.BooleanField(verbose_name=_('Kiem tra'), default=False)
 
     @cached_property
+    def is_exam(self):
+        return self.tags.filter(name='exam').exists()
+    
+    @cached_property
     def format_class(self):
         return contest_format.formats[self.format_name]
 
