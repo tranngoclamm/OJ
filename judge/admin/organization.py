@@ -20,8 +20,8 @@ class OrganizationForm(ModelForm):
 class OrganizationAdmin(VersionAdmin):
     readonly_fields = ('creation_date', 'current_consumed_credit')
     fields = ('name', 'slug', 'short_name', 'is_open', 'is_unlisted', 'paid_credit', 'current_consumed_credit',
-              'about', 'logo_override_image', 'slots', 'creation_date', 'admins')
-    list_display = ('name', 'short_name', 'is_open', 'is_unlisted', 'slots', 'show_public')
+              'about', 'logo_override_image', 'slots', 'creation_date', 'admins', 'is_official')
+    list_display = ('name', 'short_name', 'is_official', 'is_open', 'is_unlisted', 'slots', 'show_public')
     prepopulated_fields = {'slug': ('name',)}
     actions = ('recalculate_points',)
     actions_on_top = True

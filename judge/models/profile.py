@@ -78,6 +78,12 @@ class Organization(models.Model):
         help_text=_('Amount of free credits allocated each month'),
     )
 
+    is_official = models.BooleanField(
+        default=False,
+        verbose_name=_('official organization'),
+        help_text=_('Members cannot leave this organization.')
+    )
+
     _pp_table = [pow(settings.VNOJ_ORG_PP_STEP, i) for i in range(settings.VNOJ_ORG_PP_ENTRIES)]
 
     def calculate_points(self, table=_pp_table):

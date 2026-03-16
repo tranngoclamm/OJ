@@ -22,7 +22,7 @@ from reversion import revisions
 
 from judge.forms import OrganizationForm
 from judge.models import BlogPost, Comment, Contest, Language, Organization, OrganizationRequest, \
-    Problem, Profile
+    Problem, Profile, ContestProblem
 from judge.models.profile import OrganizationMonthlyUsage
 from judge.tasks import on_new_problem
 from judge.utils.infinite_paginator import InfinitePaginationMixin
@@ -234,6 +234,8 @@ class JoinOrganization(OrganizationMembershipChange):
 
 class LeaveOrganization(OrganizationMembershipChange):
     def handle(self, request, org, profile):
+        if org.is_official:
+            return generic_message(request, _("Cannot leave organization"), _("You cannot leave an official organization."), status=403)
         if not profile.organizations.filter(id=org.id).exists():
             return generic_message(request, _('Leaving organization'), _('You are not in "%s".') % org.short_name)
         if org.is_admin(profile):

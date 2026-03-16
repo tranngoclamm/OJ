@@ -28,7 +28,14 @@
         <tbody>
         {% for org in queryset %}
             <tr>
-                <td class="organization-name"><a href="{{ org.get_absolute_url() }}">{{ org.name }}</a></td>
+                <td class="organization-name">
+                    <a href="{{ org.get_absolute_url() }}">
+                        {{ org.name }}
+                        {% if org.is_official %}
+                        <i class="fa fa-shield" style="color:#1958c1;" title="Official organization"></i>
+                        {% endif %}
+                    </a>
+                </td>
                 <td><a href="{{ org.get_users_url() }}">{{ org.performance_points|floatformat(2) }}</a></td>
                 <td><a href="{{ org.get_users_url() }}">{{ org.member_count }}</a></td>
             </tr>
