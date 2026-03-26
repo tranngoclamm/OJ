@@ -9,7 +9,11 @@
         <span class="organization-tags">
             {% for org in contest.organizations.all() %}
                 <span class="organization-tag">
-                    <a href="{{ org.get_absolute_url() }}">
+                    <a 
+                        {% if not (request.is_seb and not (request.user.is_staff or request.user.is_superuser)) %}
+                            href="{{ org.get_absolute_url() }}"
+                        {% endif %}
+                    >
                         <i class="fa fa-lock"></i> {{ org.name }}
                     </a>
                 </span>
