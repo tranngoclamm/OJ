@@ -373,7 +373,7 @@
 {% endblock %}
 
 {% block post_description_end %}
-    {% if request.user.is_authenticated and not request.profile.mute %}
+    {% if request.user.is_authenticated and not request.profile.mute and not request.is_seb %}
         <a href="{{ url('new_problem_ticket', problem.code) }}" class="button clarify">
             {%- if comment_lock and request.profile.current_contest.live -%}
                 {{ _('Request clarification') }}
@@ -386,6 +386,7 @@
 
 {% block comments %}
     {% if comment_lock %}
+        {% if not (request.is_seb and not (request.user.is_staff or request.user.is_superuser)) %}                            
         <div class="clarifications-area">
             <h2><i class="fa fa-question-circle"></i> {{ _('Clarifications') }}</h2>
             {% if has_clarifications %}
@@ -401,6 +402,7 @@
                 <p class="no-comments-message">{{ _('No clarifications have been made at this time.') }}</p>
             {% endif %}
         </div>
+        {% endif %}
     {% else %}
         {% with comment_warn_code=true %}
             {% include "comments/list.html" %}
