@@ -1261,7 +1261,6 @@ class ContestTagDetail(TitleMixin, ContestTagDetailAjax):
     def get_title(self):
         return _('Contest tag: %s') % self.object.name
 
-
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
 from docx import Document
@@ -1611,8 +1610,6 @@ class ContestPrepareData(ContestDataMixin, TitleMixin, SingleObjectMixin, FormVi
 
 class ContestDownloadData(ContestDataMixin, SingleObjectMixin, View):
     def get(self, request, *args, **kwargs):
-        print(">>> ContestDownloadData VIEW HIT <<<")
-
         self.object = self.get_object()
 
         if not os.path.exists(self.data_path):
@@ -1629,3 +1626,23 @@ class ContestDownloadData(ContestDataMixin, SingleObjectMixin, View):
         response['Content-Type'] = 'application/zip'
         response['Content-Disposition'] = 'attachment; filename=%s-data.zip' % self.object.key
         return response
+    
+class ContestEndExam(LoginRequiredMixin, ContestMixin, SingleObjectMixin, View):
+    def dispatch(self, request, *args, **kwargs):
+        if request.method != 'POST':
+            return HttpResponseForbidden()
+
+        return super(ContestEndExam, self).dispatch(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        contest = self.get_object()
+        # if request.is_seb and not (request.user.is_staff or request.user.is_superuser):
+        profile = request.profile
+        if profile.current_contest is None or profile.current_contest.contest_id != contest.id:
+            return generic_message(request, _('No such contest'),
+                                _('You are not in contest "%s".') % contest.key, 404)
+        participation = profile.current_contest
+
+        participation.finished_at = timezone.now()
+        participation.save()
+        return HttpResponseRedirect('/quit_seb')

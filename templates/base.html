@@ -289,7 +289,10 @@
                         >
                             <span>
                                 <img src="{{ gravatar(request.user, 32) }}" height="24" width="24">{# -#}
-                                <span>{{ _('Hello, %(username)s.', username=bold(request.user.first_name or request.profile.display_name)) }}</span>
+                                 <span>
+                                    {{ _('%(username)s', username=bold(request.user.first_name or request.profile.display_name)) }}
+                                    ({{ bold(request.profile.display_name) }})
+                                </span>
                             </span>
                         </a>
                         <ul style="width: 150px">
@@ -333,7 +336,7 @@
     </div>
     <div id="nav-shadow"></div>
 </nav>
-{% if request.in_contest %}
+{% if request.in_contest and not request.profile.current_contest.finished_at %}
     {% set current_contest = request.participation.contest %}
     <div id="contest-info">
         <a href="{{ url('contest_view', current_contest.key) }}">

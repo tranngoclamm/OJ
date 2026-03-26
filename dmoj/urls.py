@@ -110,7 +110,6 @@ urlpatterns = [
     path('', include('social_django.urls')),
     path('problem/run_code', problem.RunCodeView.as_view(), name='problem_run_code'),
     path('download/account-docx/', contests.download_account_docx, name='download_account_docx'),
-
     path('problems', include([
         path('/', problem.ProblemList.as_view(), name='problem_list'),
         path('/random/', problem.RandomProblem.as_view(), name='problem_random'),
@@ -254,6 +253,7 @@ urlpatterns = [
         path('/stats', contests.ContestStats.as_view(), name='contest_stats'),
         path('/data/prepare/', contests.ContestPrepareData.as_view(), name='contest_prepare_data'),
         path('/data/download/', contests.ContestDownloadData.as_view(), name='contest_download_data'),
+        path('/end_exam', contests.ContestEndExam.as_view(), name='end_exam'),
 
         path('/rank/<str:problem>/',
              paged_list_view(ranked_submission.ContestRankedSubmission, 'contest_ranked_submissions')),

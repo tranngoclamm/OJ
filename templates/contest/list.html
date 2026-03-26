@@ -201,8 +201,8 @@
 {% block body %}
     <div class="content-description">
         {% if active_participations %}
-            <h4>{{ _('Active contests') }}</h4>
-            <table class="contest-list table striped">
+            <h4 id="active-contest-title">{{ _('Active contests') }}</h4>
+            <table id="active-contest-table" class="contest-list table striped">
                 <thead>
                 <tr>
                     <th style="width:80%">{{ _('Contest') }}</th>
@@ -213,6 +213,7 @@
                 <tbody>
                 {% for participation in active_participations %}
                     {% with contest=participation.contest %}
+                        {% if not request.profile.current_contest or request.profile.current_contest.contest_id != contest.id or not request.profile.current_contest.finished_at %}
                         <tr>
                             <td>
                                 <div class="contest-block">
@@ -233,11 +234,27 @@
                             </td>
                             {{ contest_join(contest, request, finished_contests) }}
                         </tr>
+                        {% endif %}
                     {% endwith %}
                 {% endfor %}
                 </tbody>
             </table>
-            <br>
+            <br class="br-active-contest">
+            <script>
+                document.addEventListener("DOMContentLoaded", function () {
+                    const table = document.getElementById("active-contest-table");
+                    const title = document.getElementById("active-contest-title");
+                    document.querySelector('.br-active-contest').style.display = 'None';
+                    if (table) {
+                        const rows = table.querySelectorAll("tbody tr");
+
+                        if (rows.length === 0) {
+                            table.style.display = "none";
+                            if (title) title.style.display = "none";
+                        }
+                    }
+                });
+            </script>
         {% endif %}
 
         {% if current_contests %}
@@ -252,6 +269,7 @@
                 </thead>
                 <tbody>
                 {% for contest in current_contests %}
+                    {% if not request.profile.current_contest or request.profile.current_contest.contest_id != contest.id or not request.profile.current_contest.finished_at %}
                     <tr>
                         <td>
                             <div class="contest-block">
@@ -274,6 +292,7 @@
                             {{ contest_register(contest, request) }}
                         {% endif %}
                     </tr>
+                    {% endif %}
                 {% endfor %}
                 </tbody>
             </table>

@@ -125,6 +125,7 @@
                     <h3>{{ _('Ongoing contests') }} <i class="fa fa-trophy"></i></h3>
                     <div class="sidebox-content sidebox-ongoing-contest">
                         {% for contest in current_contests %}
+                            {% if not request.profile.current_contest or request.profile.current_contest.contest_id != contest.id or not request.profile.current_contest.finished_at %}
                             <div class="contest">
                                 <div class="contest-list-title">
                                     <a href="{{ url('contest_view', contest.key) }}">{{ contest.name }}</a>
@@ -133,6 +134,7 @@
                                     {{ _('Ends in %(countdown)s.', countdown=as_countdown(contest.time_before_end)) }}
                                 </div>
                             </div>
+                            {% endif %}
                         {% endfor %}
                     </div>
                 </div>

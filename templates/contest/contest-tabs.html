@@ -35,11 +35,20 @@
             {% if contest.ended %}
                 {# Allow users to leave the virtual contest #}
                 {% if is_in_contest %}
+                    {% if contest.is_exam and request.is_seb and not request.user.profile.current_contest.finished_at %}
+                    <form action="{{ url('end_exam', contest.key) }}" method="post" style="background: #cc0202;"
+                          class="contest-join-pseudotab unselectable button">
+                        {% csrf_token %}
+                        <input type="submit" class="end-exam" onmouseover="this.style.background='none'"
+                        onmouseout="this.style.background=''" value="{{ _('End exam') }}">
+                    </form>
+                    {% else %}
                     <form action="{{ url('contest_leave', contest.key) }}" method="post"
                           class="contest-join-pseudotab unselectable button">
                         {% csrf_token %}
                         <input type="submit" class="leaving-forever" value="{{ _('Leave contest') }}">
                     </form>
+                    {% endif %}
                 {% elif not contest.disallow_virtual %}
                     {# Allow users to virtual join #}
                     <form action="{{ url('contest_join', contest.key) }}" method="post"
@@ -51,6 +60,14 @@
             {% else %}
                 {# Allow users to leave the contest #}
                 {% if is_in_contest %}
+                    {% if contest.is_exam and not request.user.profile.current_contest.finished_at %}
+                    <form action="{{ url('end_exam', contest.key) }}" method="post" style="background: #cc0202;"
+                          class="contest-join-pseudotab unselectable button">
+                        {% csrf_token %}
+                        <input type="submit" class="end-exam" onmouseover="this.style.background='none'"
+                         onmouseout="this.style.background=''" value="{{ _('End exam') }}">
+                    </form>
+                    {% else %}
                     <form action="{{ url('contest_leave', contest.key) }}" method="post"
                           class="contest-join-pseudotab unselectable button">
                         {% csrf_token %}
@@ -61,6 +78,7 @@
                                 {{- _('Leave contest') -}}
                             {% endif %}">
                     </form>
+                    {% endif %}
                 {% elif is_editor or is_tester or live_participation.ended %}
                     <form action="{{ url('contest_join', contest.key) }}" method="post"
                           class="contest-join-pseudotab unselectable button">

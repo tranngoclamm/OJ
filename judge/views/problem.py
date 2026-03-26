@@ -267,7 +267,7 @@ class ProblemDetail(SEBRequiredMixin, ProblemMixin, SolvedProblemMixin, Commente
         if user.is_authenticated:
             problem = self.get_object()
             contest_problem = self.contest_problem
-            if contest_problem:
+            if contest_problem and not request.profile.current_contest.finished_at:
                 response = self.seb_check(request, contest_problem.contest)
                 if response:
                     return response
@@ -710,7 +710,9 @@ class ProblemSubmit(LoginRequiredMixin, SEBRequiredMixin, ProblemMixin, TitleMix
         with transaction.atomic():
             self.new_submission = form.save(commit=False)
             contest_problem = self.contest_problem
-            if contest_problem is not None:
+            participation = self.request.profile.current_contest
+
+            if contest_problem is not None and participation.finished_at is None and not participation.ended:
                 # Use the contest object from current_contest.contest because we already use it
                 # in profile.update_contest().
                 self.new_submission.contest_object = self.request.profile.current_contest.contest
@@ -796,12 +798,11 @@ class ProblemSubmit(LoginRequiredMixin, SEBRequiredMixin, ProblemMixin, TitleMix
         if user.is_authenticated:
             contest_problem = self.contest_problem
 
-            if contest_problem:
+            if contest_problem and not request.profile.current_contest.finished_at:
                 response = self.seb_check(request, contest_problem.contest)
                 if response:
                     return response
         return super().dispatch(request, *args, **kwargs)
-
 
 class ProblemClone(ProblemMixin, PermissionRequiredMixin, TitleMixin, SingleObjectFormView):
     title = gettext_lazy('Clone Problem')
