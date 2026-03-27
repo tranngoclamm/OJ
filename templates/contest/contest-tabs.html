@@ -36,12 +36,15 @@
                 {# Allow users to leave the virtual contest #}
                 {% if is_in_contest %}
                     {% if contest.is_exam and request.is_seb and not request.user.profile.current_contest.finished_at %}
-                    <form action="{{ url('end_exam', contest.key) }}" method="post" style="background: #cc0202;"
+                    <form action="{{ url('end_exam', contest.key) }}" method="post" style="background: #cc0202; display: none"
                           class="contest-join-pseudotab unselectable button">
                         {% csrf_token %}
-                        <input type="submit" class="end-exam" onmouseover="this.style.background='none'"
+                        <input type="submit" class="end-exam" style="padding: 6px 0px;" onmouseover="this.style.background='none'"
                         onmouseout="this.style.background=''" value="{{ _('End exam') }}">
                     </form>
+                    <button class="end-exam-button" style="font-weight: bold; border-radius: 4px; background: #CC0200; padding: 4px 12px; font-family: Segoe UI , Lucida Grande, Arial, sans-serif; font-size: 16px; margin: 0px; ">
+                        End exam
+                    </button>
                     {% else %}
                     <form action="{{ url('contest_leave', contest.key) }}" method="post"
                           class="contest-join-pseudotab unselectable button">
@@ -61,12 +64,15 @@
                 {# Allow users to leave the contest #}
                 {% if is_in_contest %}
                     {% if contest.is_exam and not request.user.profile.current_contest.finished_at %}
-                    <form action="{{ url('end_exam', contest.key) }}" method="post" style="background: #cc0202;"
+                    <form action="{{ url('end_exam', contest.key) }}" method="post" style="background: #cc0202; display: none"
                           class="contest-join-pseudotab unselectable button">
                         {% csrf_token %}
-                        <input type="submit" class="end-exam" onmouseover="this.style.background='none'"
+                        <input type="submit" class="end-exam" style="padding: 6px 0px;" onmouseover="this.style.background='none'"
                          onmouseout="this.style.background=''" value="{{ _('End exam') }}">
                     </form>
+                    <button class="end-exam-button" style="font-weight: bold; border-radius: 4px; background: #CC0200; padding: 4px 12px; font-family: Segoe UI , Lucida Grande, Arial, sans-serif; font-size: 16px; margin: 0px; ">
+                        End exam
+                    </button>
                     {% else %}
                     <form action="{{ url('contest_leave', contest.key) }}" method="post"
                           class="contest-join-pseudotab unselectable button">
@@ -105,6 +111,30 @@
                     {% endif %}
                 {% endif %}
             {% endif %}
+            <div id="end-exam-modal" class="featherlight" style="display:none;">
+                <div class="featherlight-content">
+                    <span class="featherlight-close-icon featherlight-close cancel-end-exam" style="padding:6px">✕</span>
+                    <p style="color: #ff0000;font-weight: bold;">
+                        {{ _('Are you sure you want to end the exam?') }}
+                    </p>
+                    <p>
+                        {{ _('After ending the exam, your submissions will not be counted toward the contest score.') }}
+                    </p>
+                    <hr>
+                    <p>
+                        Type "<b>{{ request.profile.display_name }}</b>" to confirm:
+                    </p>
+                    <input type="text" id="confirm-name" placeholder="{{ request.profile.display_name }}" style="padding:8px; width:100%; margin-bottom:10px;">
+                    <div class="flex" style="justify-content: space-between;">
+                        <button id="confirm-end" disabled style="background: gray;cursor: default; padding: 4px 17px; font-weight: 600; border-radius: 5px;">
+                            Yes
+                        </button>
+                        <button class="cancel-end-exam" style="padding: 4px 17px; font-weight: 600; border-radius: 5px;">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
         {% endif %}
     {% elif (contest.can_join and not contest.require_registration) or contest.can_register %}
         <form action="{{ url('auth_login') }}" method="get"
