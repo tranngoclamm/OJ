@@ -41,8 +41,12 @@
                         {% block user_name_data scoped %}{% endblock %}
                         {% block admin_operations scoped %}{% endblock %}
                         {% if user.participation is defined and user.participation.finished_at %}
+                            {% set total = (user.participation.finished_at - user.participation.start).total_seconds()|int %}
+                            {% set h = total // 3600 %}
+                            {% set m = (total % 3600) // 60 %}
+                            {% set s = total % 60 %}
                             <span style="color: #2d2d2d; font-size: 12px; opacity: 0.7">
-                                🏁 {{ user.participation.finished_at|date("H:i:s") }}
+                                🏁 {{ "%02d:%02d:%02d"|format(h, m, s) }}
                             </span>
                         {% endif %}
                         <div class="personal-info" style="text-align: right;">
