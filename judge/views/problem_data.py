@@ -259,7 +259,11 @@ class ProblemDataView(TitleMixin, ProblemManagerMixin):
                 case.save()
             for case in cases_formset.deleted_objects:
                 case.delete()
+            import subprocess
             ProblemDataCompiler.generate(problem, data, problem.cases.order_by('order'), valid_files)
+            subprocess.Popen([
+                os.path.join(settings.OJ_ROOT, "config", "restart_judges.sh")
+            ])
             return HttpResponseRedirect(request.get_full_path())
         return self.render_to_response(self.get_context_data(data_form=data_form, cases_formset=cases_formset,
                                                              valid_files=valid_files))
