@@ -20,10 +20,11 @@
     <link rel="apple-touch-icon" sizes="144x144" href="/apple-touch-icon-144x144.png">
     <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png">
-    <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32">
+    <link rel="icon" href="/static/icons/ll1.svg" type="image/svg+xml">
+    <!-- <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32">
     <link rel="icon" type="image/png" href="/android-chrome-192x192.png" sizes="192x192">
     <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96">
-    <link rel="icon" type="image/png" href="/favicon-16x16.png" sizes="16x16">
+    <link rel="icon" type="image/png" href="/favicon-16x16.png" sizes="16x16"> -->
     <link rel="manifest" href="/manifest.json">
     <meta name="msapplication-TileColor" content="#231F20">
     <meta name="msapplication-TileImage" content="/mstile-144x144.png">
@@ -45,16 +46,13 @@
     {% endif %}
     {% compress css %}
         {# TODO: once dark mode support is better, enable for all users by deleting the else branch #}
-        {% if perms.judge.test_site %}
-            {% if PREFERRED_STYLE_CSS is not none %}
-                <link rel="stylesheet" href="{{ static(PREFERRED_STYLE_CSS) }}">
-            {% else %}
-                <link rel="stylesheet" href="{{ static(LIGHT_STYLE_CSS) }}">
-                <link rel="stylesheet" href="{{ static(DARK_STYLE_CSS) }}" media="(prefers-color-scheme: dark)">
-            {% endif %}
+        {% if PREFERRED_STYLE_CSS is not none %}
+            <link rel="stylesheet" href="{{ static(PREFERRED_STYLE_CSS) }}">
         {% else %}
-            <link rel="stylesheet" href="{{ static(LIGHT_STYLE_CSS) }}">
+            <link rel="stylesheet" href="{{ static(LIGHT_STYLE_CSS) }}" media="(prefers-color-scheme: light)">
+            <link rel="stylesheet" href="{{ static(DARK_STYLE_CSS) }}" media="(prefers-color-scheme: dark)">
         {% endif %}
+
         {% if INLINE_FONTAWESOME %}<link rel="stylesheet" href="{{ static('libs/fontawesome/font-awesome.css') }}">{% endif %}
         <link rel="stylesheet" href="{{ static('source_sans_pro.css') }}">
         <link rel="stylesheet" type="text/css" href="{{ static('libs/clipboard/tooltip.css') }}">
@@ -206,8 +204,27 @@
             }
         </style>
     </noscript>
+    {% if request.is_seb %}
+    <style>
+        #user-links > ul > li > a > span {
+            font-size: 21px !important;
+        }
+
+        #user-links > ul > li > a b:nth-of-type(2) {
+            color: #29e369 !important;
+        }
+    </style>
+    {% endif %}
 </head>
 <body>
+{% if (request.maintenance and not request.user.is_authenticated) or (request.maintenance and (not request.user.is_authenticated or request.user.username not in request.maintenance_allowed_users)) %}
+<div style="display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;">
+    <p style="font-size: 22px;">Hệ thống đang bảo trì. Dự kiến đến {{ (request.maintenance_time ) }}</p>
+</div>
+{% else %}
 <svg width="0" height="0" style="display: block">
     <defs>
         <clipPath id="rating-clip"><circle cx="8" cy="8" r="7"/></clipPath>
@@ -273,12 +290,21 @@
                     <i class="fa fa-exclamation-triangle" style="color: yellow;"></i>
                 </span>
             </a>
-            <a id="flag_vi" href="#" onclick="submmit_language('vi')" style="margin-right: 5px; margin-top: 4px;">
-                <img src="{{ static('icons/vi_flag.svg') }}" alt="VI" height="24">
-            </a>
-            <a id="flag_en" href="#" onclick="submmit_language('en')" style="margin-right: 5px; margin-top: 4px;">
-                <img src="{{ static('icons/gb_flag.svg') }}" alt="EN" height="24">
-            </a>
+            <form action="/i18n/setlang/" method="post">
+                {% csrf_token %}
+                <input type="hidden" name="language" value="vi">
+                <button type="submit" style="background: none;">
+                    <img style="padding-top: 6px; margin-right: 2px;" src="{{ static('icons/vi_flag.svg') }}" height="24">
+                </button>
+            </form>
+
+            <form action="/i18n/setlang/" method="post">
+                {% csrf_token %}
+                <input type="hidden" name="language" value="en">
+                <button type="submit" style="background: none;">
+                    <img style="padding-top: 6px; margin-right: 5px;" src="{{ static('icons/gb_flag.svg') }}" height="24">
+                </button>
+            </form>
             {% if request.user.is_authenticated %}
                 <ul>
                     <li>
@@ -289,10 +315,17 @@
                         >
                             <span>
                                 <img src="{{ gravatar(request.user, 32) }}" height="24" width="24">{# -#}
+                            {% if not request.is_seb %}
                                  <span>
                                     {{ _('%(username)s', username=bold(request.user.first_name or request.profile.display_name)) }}
                                     ({{ bold(request.profile.display_name) }})
                                 </span>
+                            {% else %}
+                                <span>
+                                    {{ _('%(username)s', username=bold(request.user.first_name or request.profile.display_name)) }}
+                                    {{ bold(request.profile.display_name) }}
+                                </span>
+                            {% endif %}               
                             </span>
                         </a>
                         <ul style="width: 150px">
@@ -327,7 +360,7 @@
                 </span>
             {% endif %}
 
-            {% if request.is_seb and (request.user.is_staff or (not request.in_contest and not (request.user.is_staff or request.user.is_superuser))) %}
+            {% if request.is_seb and (request.user.is_staff or (not request.in_exam_contest and not (request.user.is_staff or request.user.is_superuser))) %}
             <a href="/quit_seb" style="margin-left: 5px;font-size: 20px;">
                 <span><i class="fa fa-power-off" style="color: white;"></i></span>
             </a>
@@ -432,7 +465,11 @@
             </div>
         </div>
         <div class="flex submit-wrapper">
+            {% if request.user.is_authenticated %}
             <button class="submit-btn" onclick="runCode()">Run</button>
+            {% else %}
+            <a class="submit-btn" style="color: white; font-family: Arial;" href="{{ url('auth_login') }}?next={{ LOGIN_RETURN_PATH|urlencode }}">{{ _('Run') }}</a>
+            {% endif %}
             <button class="submit-btn problem-submit-btn" onclick="submitProblem()">Submit</button>
         </div>
     </div>
@@ -481,7 +518,7 @@
         <span id="footer-content">
             <br>
             {{_('proudly powered by %(dmoj)s', dmoj=safe('<a style="color: #808080" href="https://dmoj.ca"><b>DMOJ</b></a>'))}} |
-            {{_('follow us on %(github)s and %(facebook)s', github=safe('<a style="color: #808080" href="https://github.com/VNOI-Admin/OJ"><b>Github</b></a>'), facebook=safe('<a style="color: #808080" href="https://www.facebook.com/vnoi.wiki"><b>Facebook</b></a>'))}}
+            {{_('follow us on %(facebook)s', facebook=safe('<a style="color: #808080" href="https://www.facebook.com/pc2.org"><b>Facebook</b></a>'))}}
             {% if misc_config.footer %}
                 {{ misc_config.footer|safe }} |
             {% endif %}
@@ -525,5 +562,6 @@
     </script>
     {% endif %}
 </div>
+{% endif %}
 </body>
 </html>

@@ -1,5 +1,5 @@
 // Navbar should look the same in every theme, so vars-common should be enough.
-@use "vars-common" as *;
+@import "vars-common";
 
 #user-links {
     top: 0;
@@ -297,3 +297,4 @@ nav {
         }
     }
 }
+

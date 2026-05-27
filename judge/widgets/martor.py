@@ -7,6 +7,9 @@ class MartorWidget(OldMartorWidget):
     UPLOADS_ENABLED = True
 
     class Media:
+        css = {
+            'all': ['martor-description.css'],
+        }
         js = ['martor-mathjax.js']
 
 
@@ -14,7 +17,5 @@ class AdminMartorWidget(OldAdminMartorWidget):
     UPLOADS_ENABLED = True
 
     class Media:
-        css = {
-            'all': ['martor-description.css', 'featherlight.css'],
-        }
-        js = ['admin/js/jquery.init.js', 'martor-mathjax.js', 'libs/featherlight/featherlight.min.js']
+        css = MartorWidget.Media.css
+        js = ['admin/js/jquery.init.js', 'martor-mathjax.js']
