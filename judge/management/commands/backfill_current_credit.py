@@ -37,7 +37,7 @@ class Command(BaseCommand):
             .aggregate(Sum('credit'))['credit__sum'] or 0
         )
 
-        org.free_credit = settings.VNOJ_MONTHLY_FREE_CREDIT
+        org.monthly_credit = settings.VNOJ_MONTHLY_FREE_CREDIT
 
         org.consume_credit(credit_problem + credit_contest)
 
