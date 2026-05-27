@@ -6,6 +6,10 @@
         {{ make_tab('stats', 'fa-pie-chart', url('contest_stats', contest.key), _('Statistics')) }}
     {% endif %}
 
+    {% if can_edit and contest_has_rooms %}
+        {{ make_tab('devices', 'fa-desktop', url('contest_device', contest.key), _('Devices')) }}
+    {% endif %}
+
     {% if contest.start_time <= now or perms.judge.see_private_contest %}
         {% if contest.can_see_own_scoreboard(request.user) %}
             {{ make_tab('ranking', 'fa-bar-chart', url('contest_ranking', contest.key), _('Rankings')) }}
@@ -71,7 +75,7 @@
                          onmouseout="this.style.background=''" value="{{ _('End exam') }}">
                     </form>
                     <button class="end-exam-button" style="font-weight: bold; border-radius: 4px; background: #CC0200; padding: 4px 12px; font-family: Segoe UI , Lucida Grande, Arial, sans-serif; font-size: 16px; margin: 0px; ">
-                        End exam
+                        {{ _('end_exam_btn') }}
                     </button>
                     {% else %}
                     <form action="{{ url('contest_leave', contest.key) }}" method="post"
@@ -121,16 +125,14 @@
                         {{ _('After ending the exam, your submissions will not be counted toward the contest score.') }}
                     </p>
                     <hr>
-                    <p>
-                        Type "<b>{{ request.profile.display_name }}</b>" to confirm:
-                    </p>
+                    <p>{{ gettext('Type "%(name)s" to confirm:', name=request.profile.display_name) }}</p>
                     <input type="text" id="confirm-name" placeholder="{{ request.profile.display_name }}" style="padding:8px; width:100%; margin-bottom:10px;">
                     <div class="flex" style="justify-content: space-between;">
                         <button id="confirm-end" disabled style="background: gray;cursor: default; padding: 4px 17px; font-weight: 600; border-radius: 5px;">
-                            Yes
+                            {{ _('confirm_end_exam_yes') }}
                         </button>
                         <button class="cancel-end-exam" style="padding: 4px 17px; font-weight: 600; border-radius: 5px;">
-                            Cancel
+                            {{ _('confirm_end_exam_no') }}                        
                         </button>
                     </div>
                 </div>

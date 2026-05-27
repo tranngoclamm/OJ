@@ -197,6 +197,11 @@ class Contest(models.Model):
                                                        'Leave it blank to disable.'),
                                            blank=True, default='', max_length=255)
     is_kt = models.BooleanField(verbose_name=_('Kiem tra'), default=False)
+    exam_room = models.ManyToManyField(
+        "judge.Room",
+        blank=True,
+        related_name="contests"
+    )
 
     @cached_property
     def is_exam(self):
@@ -589,7 +594,7 @@ class ContestParticipation(models.Model):
                                   help_text=_('0 means non-virtual, otherwise the n-th virtual participation.'))
     format_data = JSONField(verbose_name=_('contest format specific data'), null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
-    
+
     def recompute_results(self):
         with transaction.atomic():
             self.contest.format.update_participation(self)

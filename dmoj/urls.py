@@ -17,7 +17,7 @@ from judge.feed import AtomBlogFeed, AtomCommentFeed, AtomProblemFeed, BlogFeed,
 from judge.sitemap import sitemaps
 from judge.views import TitledTemplateView, api, blog, comment, contests, language, license, mailgun, organization, \
     preview, problem, problem_manage, ranked_submission, register, stats, status, submission, tag, tasks, ticket, \
-    two_factor, user, widgets
+    two_factor, user, widgets, seb, cert, tpm
 from judge.views.magazine import MagazinePage
 from judge.views.problem_data import ProblemDataView, ProblemSubmissionDiff, \
     problem_data_file, problem_init_view
@@ -110,6 +110,13 @@ urlpatterns = [
     path('', include('social_django.urls')),
     path('problem/run_code', problem.RunCodeView.as_view(), name='problem_run_code'),
     path('download/account-docx/', contests.download_account_docx, name='download_account_docx'),
+    path('register_device/', tpm.register_device, name='register_device'),    
+    path('verify_tpm/', tpm.verify_tpm, name='verify_tpm'),
+    path('get_challenge/', tpm.get_challenge, name='get_challenge'),
+    path('auto-login/', tpm.auto_login,  name='auto_login'),
+    path('device-logout/', tpm.device_logout,  name='device-logout'),
+    path('download-config/', tpm.get_seb_file, name='get_seb_file'),
+
     path('problems', include([
         path('/', problem.ProblemList.as_view(), name='problem_list'),
         path('/random/', problem.RandomProblem.as_view(), name='problem_random'),
@@ -254,6 +261,7 @@ urlpatterns = [
         path('/data/prepare/', contests.ContestPrepareData.as_view(), name='contest_prepare_data'),
         path('/data/download/', contests.ContestDownloadData.as_view(), name='contest_download_data'),
         path('/end_exam', contests.ContestEndExam.as_view(), name='end_exam'),
+        path('/devices/', contests.ContestDevices.as_view(), name='contest_device'),
 
         path('/rank/<str:problem>/',
              paged_list_view(ranked_submission.ContestRankedSubmission, 'contest_ranked_submissions')),

@@ -26,6 +26,8 @@ from judge.utils.views import NoBatchDeleteMixin
 from judge.widgets import AdminHeavySelect2MultipleWidget, AdminHeavySelect2Widget, AdminMartorWidget, \
     AdminSelect2MultipleWidget, AdminSelect2Widget
 
+from django.contrib.sessions.models import Session
+from django.core.cache import caches
 
 class AdminHeavySelect2Widget(AdminHeavySelect2Widget):
     @property
@@ -714,7 +716,7 @@ class ContestParticipationForm(ModelForm):
 class ContestParticipationAdmin(admin.ModelAdmin):
     fields = ('contest', 'user', 'real_start', 'virtual', 'is_disqualified')
     list_display = ('contest', 'username', 'show_virtual', 'real_start', 'score', 'cumtime', 'tiebreaker')
-    actions = ['recalculate_results']
+    actions = ['recalculate_results', 'force_logout_users']
     actions_on_bottom = actions_on_top = True
     search_fields = ('contest__key', 'contest__name', 'user__user__username')
     form = ContestParticipationForm
@@ -748,3 +750,31 @@ class ContestParticipationAdmin(admin.ModelAdmin):
     @admin.display(description=_('virtual'), ordering='virtual')
     def show_virtual(self, obj):
         return obj.virtual or '-'
+
+    def delete_user_sessions(self, user):
+        sessions = Session.objects.filter(expire_date__gte=timezone.now())
+        count = 0
+        cache = caches['default']
+        for session in sessions:
+            data = session.get_decoded()
+            if data.get('_auth_user_id') == str(user.id):
+                cache_key = "django.contrib.sessions.cached_db" + session.session_key
+                cache.delete(cache_key)
+                session.delete()
+                count += 1
+
+        return count
+
+    def force_logout_users(self, request, queryset):
+        total_sessions = 0
+
+        for participation in queryset:
+            total_sessions += self.delete_user_sessions(participation.user.user)
+
+        self.message_user(
+            request,
+            f"Successfully force logged out {queryset.count()} user(s). "
+            f"Removed {total_sessions} active session(s)."
+        )
+
+    force_logout_users.short_description = "Force logout"

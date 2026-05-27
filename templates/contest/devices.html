@@ -1,0 +1,108 @@
+{% extends "common-content.html" %}
+
+{% block title_ruler %}{% endblock %}
+
+{% block title_row %}
+    {% set tab = 'devices' %}
+    {% include "contest/contest-tabs.html" %}
+{% endblock %}
+
+{% block media %}
+    <style>
+        span.rating.rate-none.user a{
+            color: #333;
+        }
+    </style>
+{% endblock %}
+
+{% block js_media %}
+<script>
+  $(function () { 
+        $('select.select2').removeClass('select2-hidden'); 
+        $('.select2').select2(); 
+    });
+</script>
+{% endblock %}
+
+{% block body %}
+{% spaceless %}
+
+{% if messages %}
+    <div style="margin-bottom:10px;">
+        {% for message in messages %}
+            <div style="
+                padding:10px;
+                border-radius:5px;
+                margin-bottom:5px;
+                {% if message.tags == 'error' %}
+                    background:#ffe5e5; color:#900;
+                {% endif %}
+            ">
+                {{ message }}
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
+<table class="users-table table striped">
+    <thead>
+        <tr>
+            <th class="header rank" style="width:5%;">#</th>
+            <th class="header username">Username</th>
+            <th class="header">Device</th>
+            <th class="header">Room</th>
+            <th class="header">Action</th>
+        </tr>
+    </thead>
+
+    <tbody>
+    {% for seat in seats %}
+        <tr id="user-{{ seat.user.user.username }}"
+            {% if not seat.device %}style="background:#ffe5e5"{% endif %}>
+            <td>{{ loop.index }}</td>
+            <td class="user-name">
+                <div>
+                    <div style="float:left">
+                        {% block user_name_display scoped %} {{ link_user(seat.user.user) }} {% endblock %}
+                        (<span>{{ seat.user.user.first_name }}</span>)
+                    </div>
+                </div>
+            </td>
+
+            <!-- Device dropdown -->
+            <td>
+                <form method="post" style="display:flex; gap:5px;">
+                    {% csrf_token %}
+                    <input type="hidden" name="seat_id" value="{{ seat.id }}">
+
+                    <select name="device_id" class="select2 select2-hidden" style="width:120px; visibility: hidden;">
+                        <option value="">  -----------  </option>
+                        {% for d in devices_map[seat.id] %}
+                            <option value="{{ d.id }}"
+                                {% if seat.device and d.id == seat.device.id %}selected{% endif %}>
+                                {{ d.hostname }}
+                            </option>
+                        {% endfor %}
+                    </select>
+
+                    <button type="submit" style="padding: 4px 5px !important;">✔</button>
+                </form>
+            </td>
+
+            <!-- Room -->
+            <td>
+                {{ seat.device.room.code if seat.device and seat.device.room else '-' }}
+            </td>
+
+            <!-- Action -->
+            <td>
+                <a href="{{ url('admin:judge_contestseat_change', seat.id) }}">
+                    ⚙
+                </a>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endspaceless %}
+{% endblock %}

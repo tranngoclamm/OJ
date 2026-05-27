@@ -36,10 +36,12 @@
 <body>
     <div class="message-box">
         <div class="lock-icon">🔒</div>
-        <div class="title">{{ _('Access Restricted') }}</div>
-        <div class="description">
-            {{ _('This exam can only be accessed through the Secure Exam Browser (SEB).') }}
+        <div class="title">Access Restricted</div>
+        <div class="description">You are currently in a device-bound exam. Access permitted only through assigned devices.</div>
+        <div class="action">
+            <a href="/device-logout/">Log out</a>
         </div>
     </div>
 </body>
 </html>
+

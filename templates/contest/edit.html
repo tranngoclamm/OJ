@@ -65,7 +65,9 @@
     <script>
         document.addEventListener("DOMContentLoaded", function () {
             const isExamCheckbox = document.querySelector("#id_is_exam");
+            //const orgField = document.querySelector("#id_exam_organization");
             const orgField = document.querySelector("#id_create_exam_accounts");
+
 
             function toggleOrganizationField() {
                 if (!isExamCheckbox.disabled && isExamCheckbox.checked) {
@@ -83,12 +85,25 @@
         });
     </script>
     {{ form.media.js }}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // const isExam = document.querySelector("#id_is_exam");
+        const examRooms = document.querySelector("#id_exam_rooms");        
+        examRooms.setAttribute("disabled", "disabled");
+    });
+</script>
+
 {% endblock %}
 
 {% block media %}
     <link rel="stylesheet" href="/static/vnoj/flatpickr/dist/flatpickr.min.css">
     {{ form.media.css }}
     <link rel="stylesheet" type="text/css" href="{{ static('ui_form.css') }}">
+    <style>
+        footer{
+            position: relative;
+        }
+    </style>
 {% endblock %}
 
 {% block body %}
@@ -126,6 +141,16 @@
         {{ contest_problem_formset.management_form }}
         <table class="django-as-table">
             {{ form.as_table() }}
+           <tr>
+                <td colspan="2">
+                    <div id="mapping-modal" style="display:none;">
+                        <table style="border-spacing: 0; width:100%; table-layout:fixed;">
+                            <tbody id="mapping-body"></tbody>
+                        </table>
+                    </div>
+                </td>
+            </tr>
+
         </table>
 
         <hr>

@@ -152,8 +152,19 @@ class OrganizationList(TitleMixin, ListView):
     title = gettext_lazy('Organizations')
 
     def get_queryset(self):
-        return Organization.objects.filter(is_unlisted=False)
+        return Organization.objects.filter(is_unlisted=False).order_by('-creation_date')
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        if self.request.user.is_authenticated:
+            context['user_organizations'] = (
+                self.request.profile.organizations
+                .all()
+                .order_by('-creation_date')
+            )
+
+        return context
 
 class OrganizationUsers(QueryStringSortMixin, DiggPaginatorMixin, BaseOrganizationListView):
     template_name = 'organization/users.html'
@@ -235,7 +246,7 @@ class JoinOrganization(OrganizationMembershipChange):
 class LeaveOrganization(OrganizationMembershipChange):
     def handle(self, request, org, profile):
         if org.is_official:
-            return generic_message(request, _("Cannot leave organization"), _("You cannot leave an official organization."), status=403)
+            return generic_message(request, _("Cannot leave organization"), _("You cannot leave an official organization."), status=403)    
         if not profile.organizations.filter(id=org.id).exists():
             return generic_message(request, _('Leaving organization'), _('You are not in "%s".') % org.short_name)
         if org.is_admin(profile):
@@ -740,11 +751,19 @@ class ContestCreateOrganization(AdminOrganizationMixin, CreateContest):
         return kwargs
 
     def save_contest_form(self, form):
-        self.object = form.save()
-        self.object.authors.add(self.request.profile)
+        self.object = form.save(commit=False)
+
         self.object.is_organization_private = True
-        self.object.organizations.add(self.organization)
         self.object.save()
+
+        form.save_m2m()  
+
+        rooms = form.cleaned_data.get("exam_rooms")
+        if rooms:
+            self.object.exam_room.set(rooms)
+
+        self.object.authors.add(self.request.profile)
+        self.object.organizations.add(self.organization)
 
 class CloneContestForm(forms.Form):
     contests = forms.ModelMultipleChoiceField(
@@ -790,22 +809,38 @@ class ContestCloneOrganization(LoginRequiredMixin, TitleMixin, AdminOrganization
         kwargs['source_org'] = self.organization
         kwargs['user_profile'] = self.request.profile
         return kwargs
+   
+    def generate_unique_key(self, base_key):
+        if not Contest.objects.filter(key=base_key).exists():
+            return base_key
+        i = 1
+        while True:
+            new_key = f"{base_key}_{i}"
+            if not Contest.objects.filter(key=new_key).exists():
+                return new_key
+            i += 1
 
     def form_valid(self, form):
+        errors = []
+
         contests = form.cleaned_data['contests']
         target_orgs = form.cleaned_data['target_organizations']
 
         for contest in contests:
             try:
                 suffix = contest.key.split('_')[-1] if '_' in contest.key else contest.key
+
                 for target_org in target_orgs:
-                    new_key = f"{target_org.slug.lower()}_{suffix}_{suffix}"
-                    cloned = copy.copy(contest)  
+                    base_key = f"{target_org.slug.lower()}_{suffix}"
+                    new_key = self.generate_unique_key(base_key)
+
+                    cloned = copy.copy(contest)
                     cloned.pk = None
                     cloned.key = new_key
 
                     with revisions.create_revision(atomic=True):
                         cloned.save()
+
                         cloned.tags.set(contest.tags.all())
                         cloned.organizations.set([target_org])
                         cloned.private_contestants.set(contest.private_contestants.all())
@@ -816,10 +851,20 @@ class ContestCloneOrganization(LoginRequiredMixin, TitleMixin, AdminOrganization
                         for problem in problems:
                             problem.pk = None
                             problem.contest = cloned
+
                         ContestProblem.objects.bulk_create(problems)
 
                         revisions.set_user(self.request.user)
                         revisions.set_comment(f"Cloned contest from {contest.key}")
+
             except Exception as e:
-                logger.exception(f"❌ Error while cloning contest {contest.key}: {str(e)}")
+                error_msg = f"Clone failed for contest '{contest.key}': {str(e)}"
+                errors.append(error_msg)
+
+        if errors:
+            for err in errors:
+                form.add_error(None, err)  
+
+            return self.form_invalid(form)
+
         return redirect(reverse('organization_home', args=[self.organization.slug]))

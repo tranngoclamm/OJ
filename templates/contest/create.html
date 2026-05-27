@@ -2,3 +2,454 @@
 
 {% block edit_contest %}
 {% endblock %}
+
+{% block js_media %}
+  {% include "leave-warning.html" %}
+    <script src="/static/vnoj/flatpickr/flatpickr.js"></script>
+    <script type="text/javascript">
+        window.django = {jQuery: $};
+    </script>
+
+    <script>
+        // This code activates flatpickr on fields with the 'datetimefield' class when the document has loaded
+        window.addEventListener("DOMContentLoaded", function () {
+            flatpickr(".datetimefield", {
+                enableTime: true,
+                enableSeconds: true,
+                dateFormat: "Y-m-d H:i:S",
+                time_24hr: true,
+            });
+        });
+    </script>
+
+    <script src="{{ static('vnoj/jquery.formset.js') }}"></script>
+    <script type="text/javascript">
+        $(function() {
+            $('#form_set tr').formset({
+                prefix: '{{ contest_problem_formset.prefix }}'
+            });
+
+            var noResults = function () {
+                return {{ _('Press Enter to select multiple users...')|htmltojs }};
+            };
+
+            $(document).one('click', '#id_private_contestants + .select2', function (e) {
+                $('#id_private_contestants').data().select2.options.get('translations').dict['noResults'] = noResults;
+            });
+
+            $(document).on('keyup', '#id_private_contestants + .select2 .select2-search__field', function (e) {
+                if (e.keyCode === 13) {
+                    var $id_private_contestants = $('#id_private_contestants');
+                    var contestants = $(this).val().split(/[\s,]+/);
+                    if (contestants.length <= 1) {
+                        // Skip to let select2 handle this
+                        return;
+                    }
+
+                    $.ajax({
+                        type: 'GET',
+                        url: $id_private_contestants.data().select2.dataAdapter.ajaxOptions.url,
+                        data: {
+                            multiple_terms: contestants,
+                        },
+                        success: function (response) {
+                            for (const contestant of response.results) {
+                                $id_private_contestants.select2('trigger', 'select', {
+                                    data: contestant,
+                                });
+                            }
+                        },
+                    });
+                }
+            });
+        })
+    </script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const isExam = document.querySelector("#id_is_exam");
+        const createAccounts = document.querySelector("#id_create_exam_accounts");
+        const examRooms = document.querySelector("#id_exam_rooms");
+
+        function updateState() {
+            const isExamChecked = isExam.checked;
+
+            // 1. Toggle exam_rooms
+            if (isExamChecked) {
+                examRooms.removeAttribute("disabled");
+            } else {
+                examRooms.setAttribute("disabled", "disabled");
+
+                // clear select2 value
+                if ($(examRooms).hasClass("select2-hidden-accessible")) {
+                    $(examRooms).val(null).trigger("change");
+                } else {
+                    examRooms.value = null;
+                }
+            }
+
+            // 2. Toggle create_exam_accounts
+            if (isExamChecked) {
+                createAccounts.removeAttribute("disabled");
+            } else {
+                createAccounts.checked = false;
+                createAccounts.setAttribute("disabled", "disabled");
+            }
+        }
+
+        // 3. Mutual exclusive
+        function handleExclusive() {
+            // Nếu chọn exam_rooms (autologin)
+            $(examRooms).on("change", function () {
+                const hasValue = $(this).val() && $(this).val().length > 0;
+                if (hasValue) {
+                    createAccounts.checked = false;
+                }
+            });
+
+            // Nếu chọn create_exam_accounts
+            createAccounts.addEventListener("change", function () {
+                if (this.checked) {
+                    // clear exam_rooms
+                    $(examRooms).val(null).trigger("change");
+                }
+            });
+        }
+
+        // Init
+        updateState();
+        handleExclusive();
+
+        // Event
+        isExam.addEventListener("change", updateState);
+    });
+</script>
+
+{{ form.media.js }}
+
+    <script id="users-data" type="application/json">
+{{ users_json|safe }}
+</script>
+
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+
+
+    function updateMapping() {
+        let result = {};
+        const hiddenInput = document.getElementById("id_room_user_map");
+
+        document.querySelectorAll("#mapping-body select").forEach(select => {
+            result[select.dataset.room] = $(select).val() || [];
+        });
+
+        hiddenInput.value = JSON.stringify(result);
+        console.log("Saved:", result);
+    }
+   
+function buildMappingUI(selectedRooms) {
+    body.innerHTML = "";
+
+    const width = document.querySelector('label[for="id_create_exam_accounts"]')
+        .closest('th').getBoundingClientRect().width;
+
+    selectedRooms.forEach(room => {
+        let row = document.createElement("tr");
+
+        let tdRoom = document.createElement("td");
+        tdRoom.dataset.room = room.id;
+        tdRoom.innerText = room.text + ":";
+        tdRoom.style.fontWeight = 'bold';
+
+        let tdUser = document.createElement("td");
+
+        let select = document.createElement("select");
+        select.multiple = true;
+        select.style.width = "100%";
+        select.style.visibility = "hidden";
+
+        users.forEach(u => {
+            let opt = document.createElement("option");
+            opt.value = u.id;
+            opt.text = u.name;
+            select.appendChild(opt);
+        });
+
+        select.dataset.room = room.id;
+        tdUser.appendChild(select);
+
+        $(select).select2({
+            width: "100%",
+            allowClear: true,
+            placeholder: "Choose user"
+        });
+
+        select.style.visibility = "visible";
+
+        $(select).on("change", updateMapping);
+
+        row.appendChild(tdRoom);
+        row.appendChild(tdUser);
+        body.appendChild(row);
+    });
+
+    document.querySelector("#mapping-body tr td").style.width = (width - 2) + "px";
+}
+
+function restoreMapping() {
+    const hiddenInput = document.getElementById("id_room_user_map");
+
+    if (!hiddenInput || !hiddenInput.value) return;
+
+    let data;
+    try {
+        data = JSON.parse(hiddenInput.value);
+    } catch (e) {
+        console.log("Invalid JSON");
+        return;
+    }
+
+    console.log("Restoring:", data);
+
+    Object.entries(data).forEach(([roomId, userIds]) => {
+        const select = document.querySelector(`select[data-room="${roomId}"]`);
+        if (!select) return;
+
+        $(select).val(userIds).trigger('change');
+    });
+}
+
+function openMappingModalWithRestore() {
+    const body = document.getElementById("mapping-body");
+    const users = JSON.parse(document.getElementById("users-data").textContent);
+    const modal = document.getElementById("mapping-modal");
+
+const selectedRooms = $("#id_exam_rooms").select2('data');
+    body.innerHTML = "";
+    const width = document.querySelector('label[for="id_create_exam_accounts"]').closest('th').getBoundingClientRect().width;
+
+    // Đọc mapping cũ trước
+    let currentMapping = {};
+    try {
+        const raw = document.getElementById("id_room_user_map").value;
+        if (raw) currentMapping = JSON.parse(raw);
+    } catch (e) {}
+
+    selectedRooms.forEach(room => {
+        let row = document.createElement("tr");
+
+        let tdRoom = document.createElement("td");
+        tdRoom.dataset.room = room.id;
+        tdRoom.innerText = room.text + ":";
+        tdRoom.style.fontWeight = 'bold';
+
+        let tdUser = document.createElement("td");
+        let select = document.createElement("select");
+        select.multiple = true;
+        select.style.width = "100%";
+        select.style.visibility = "hidden";
+
+        users.forEach(u => {
+            let opt = document.createElement("option");
+            opt.value = u.id;
+            opt.text = u.name;
+            select.appendChild(opt);
+        });
+
+        select.dataset.room = room.id;
+        tdUser.appendChild(select);
+
+        $(select).select2({
+            width: "100%",
+            allowClear: true,
+            placeholder: "Choose user",
+        });
+
+        // Restore giá trị cũ
+        const savedValues = currentMapping[String(room.id)] || [];
+        if (savedValues.length > 0) {
+            $(select).val(savedValues).trigger('change');
+        }
+
+        select.style.visibility = "visible";
+
+        $(select).on('select2:open', function () {
+            let searchField = document.querySelector('.select2-container--open .select2-search__field');
+            if (!searchField) return;
+
+            searchField.addEventListener('paste', function (e) {
+                e.preventDefault();
+                let paste = (e.clipboardData || window.clipboardData).getData('text');
+                let codes = paste.split(/[\s,;]+/).map(x => x.trim()).filter(Boolean);
+                let matchedValues = [];
+
+                $(select).find('option').each(function () {
+                    let text = $(this).text();
+                    for (let code of codes) {
+                        if (text.startsWith(code)) {
+                            matchedValues.push($(this).val());
+                            break;
+                        }
+                    }
+                });
+
+                let current = $(select).val() || [];
+                let finalValues = [...new Set([...current, ...matchedValues])];
+                $(select).val(finalValues).trigger('change');
+            });
+        });
+
+        $(select).on("change", updateMapping);
+
+        row.appendChild(tdRoom);
+        row.appendChild(tdUser);
+        body.appendChild(row);
+    });
+
+    document.querySelector("#mapping-body tr td").style.width = (width - 2) + "px";
+    updateMapping();
+    modal.style.display = "block";
+}
+
+    const observer = new MutationObserver(() => {
+        // const target = document.querySelector('span.select2-container[data-select2-id="6"]');
+        const target = document.querySelector('#id_exam_rooms + span.select2');
+        if (target && !target.querySelector('.fa-chevron-down')) {
+            const icon = document.createElement('i');
+            icon.classList.add('angle', 'down', 'grey', 'icon', 'expand-editor');
+            icon.id = "open-mapping";
+            target.style.position = 'relative';
+            icon.style.position = 'absolute';
+            icon.style.right = '32px';
+            icon.style.top = '50%';
+            icon.style.transform = 'translateY(-50%)';
+            icon.style.cursor = 'pointer';
+            target.appendChild(icon);
+
+
+    // users từ backend render sẵn
+    // const users = JSON.parse(document.getElementById("users-data").textContent);
+const users = JSON.parse(document.getElementById("users-data").textContent);
+console.log("users:", users);
+ const openBtn = document.getElementById("open-mapping");
+    const modal = document.getElementById("mapping-modal");
+    const body = document.getElementById("mapping-body");
+    
+    openBtn.addEventListener("click", function () {
+        body.innerHTML = "";
+
+        // lấy room đã chọn
+        // const selectedRooms = $("#id_exam_rooms").val();
+        const selectedRooms = $("#id_exam_rooms").select2('data');
+        console.log(selectedRooms);
+        const width = document.querySelector('label[for="id_create_exam_accounts"]').closest('th').getBoundingClientRect().width;
+
+        selectedRooms.forEach(room => {
+            let row = document.createElement("tr");
+
+            // ROOM
+            let tdRoom = document.createElement("td");
+            // tdRoom.value = room.id;
+            tdRoom.dataset.room = room.id;
+            tdRoom.innerText = room.text + ":";
+            tdRoom.style.fontWeight = 'bold';
+
+            // USER SELECT
+            let tdUser = document.createElement("td");
+            // let select = document.createElement("select");
+            let select = document.createElement("select");
+            select.multiple = true;
+            select.style.width = "100%";
+            select.style.visibility = "hidden";
+
+            users.forEach(u => {
+                let opt = document.createElement("option");
+                opt.value = u.id;
+                opt.text = u.name;
+                select.appendChild(opt);
+            });
+
+            select.dataset.room = room.id;
+            tdUser.appendChild(select);
+            // setTimeout(() => {
+            $(select).select2({
+                width: "100%",
+                allowClear: true,
+                placeholder: "Choose user",
+                // closeOnSelect: false
+            });
+            select.style.visibility = "visible";
+
+            $(select).on('select2:open', function () {
+                let searchField = document.querySelector('.select2-container--open .select2-search__field');
+
+                if (!searchField) return;
+
+                searchField.addEventListener('paste', function (e) {
+                    e.preventDefault();
+
+                    let paste = (e.clipboardData || window.clipboardData).getData('text');
+
+                    // tách theo xuống dòng / space / tab
+                    let codes = paste.split(/[\s,;]+/).map(x => x.trim()).filter(Boolean);
+
+                    let matchedValues = [];
+
+                    // duyệt toàn bộ option
+                    $(select).find('option').each(function () {
+                        let text = $(this).text(); // "23010731 (Nguyễn ...)"
+
+                        for (let code of codes) {
+                            if (text.startsWith(code)) {
+                                matchedValues.push($(this).val());
+                                break;
+                            }
+                        }
+                    });
+
+                    // merge với giá trị cũ
+                    let current = $(select).val() || [];
+                    let finalValues = [...new Set([...current, ...matchedValues])];
+
+                    $(select).val(finalValues).trigger('change');
+                });
+            });
+                $(select).on("change", updateMapping);
+
+            // }, 0);
+            row.appendChild(tdRoom);
+            row.appendChild(tdUser);
+            body.appendChild(row);
+        });
+        document.querySelector("#mapping-body tr td").style.width = (width - 2)  + "px";
+
+        updateMapping();
+        modal.style.display = "block";
+  
+    });
+
+            observer.disconnect(); // ngừng theo dõi sau khi đã thêm icon
+            const hiddenInput = document.getElementById("id_room_user_map");
+            if (hiddenInput && hiddenInput.value) {
+                try {
+                    const existing = JSON.parse(hiddenInput.value);
+                    if (Object.keys(existing).length > 0) {
+                        setTimeout(() => {
+                            const selectedRooms = $("#id_exam_rooms").select2('data');
+                            console.log("selectedRooms for restore:", selectedRooms);
+                            if (selectedRooms && selectedRooms.length > 0) {
+                                openMappingModalWithRestore();
+                            }
+                        }, 300);
+                            
+                    }
+                } catch (e) {}
+            }
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+});
+
+</script>
+{% endblock %}

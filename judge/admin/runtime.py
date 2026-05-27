@@ -11,9 +11,9 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_POST
 from reversion.admin import VersionAdmin
 
-from judge.models import Judge, Problem
+from judge.models import Judge, Problem, ContestSeat, Device
 from judge.widgets import AdminAceWidget, AdminMartorWidget
-
+from django_ace import AceWidget
 
 class LanguageForm(ModelForm):
     class Meta:
@@ -125,3 +125,40 @@ class JudgeAdmin(VersionAdmin):
         if result and obj is not None:
             return not obj.online
         return result
+
+class ContestSeatAdminForm(ModelForm):
+    class Meta:
+        model = ContestSeat
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if not self.instance or not self.instance.pk:
+            return
+
+        seat = self.instance
+        contest = seat.contest
+
+        busy_device_ids = set(
+            ContestSeat.objects
+            .filter(
+                contest__start_time__lt=contest.end_time,
+                contest__end_time__gt=contest.start_time,
+                device__isnull=False,
+            )
+            .exclude(contest=contest)
+            .exclude(contest__end_time=contest.start_time)
+            .exclude(contest__start_time=contest.end_time)
+            .values_list("device_id", flat=True)
+        )
+
+        current_ids = set(
+            ContestSeat.objects
+            .filter(contest=contest, device__isnull=False)
+            .values_list("device_id", flat=True)
+        )
+
+        occupied = busy_device_ids | (current_ids - {seat.device_id})
+        qs = Device.objects.exclude(id__in=occupied).order_by("hostname")
+        self.fields["device"].queryset = qs

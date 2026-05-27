@@ -22,10 +22,11 @@ from django.utils.translation import gettext_lazy as _, ngettext_lazy
 
 from django_ace import AceWidget
 from judge.models import BlogPost, Contest, ContestAnnouncement, ContestProblem, Language, LanguageLimit, \
-    Organization, Problem, Profile, Solution, Submission, Tag, WebAuthnCredential, ContestTag
+    Organization, Problem, Profile, Solution, Submission, Tag, WebAuthnCredential, ContestTag, Room, Device, ContestSeat
 from judge.utils.subscription import newsletter_id
 from judge.widgets import HeavySelect2MultipleWidget, HeavySelect2Widget, MartorWidget, \
     Select2MultipleWidget, Select2Widget
+from django.utils import timezone
 TOTP_CODE_LENGTH = 6
 
 two_factor_validators_by_length = {
@@ -470,7 +471,7 @@ class OrganizationForm(ModelForm):
         model = Organization
         fields = [
             'name', 'slug', 'paid_credit', 'monthly_free_credit_limit', 'is_open',
-            'about', 'logo_override_image', 'admins',
+            'about', 'logo_override_image', 'admins', 'is_official'
         ]
         widgets = {'about': MartorWidget(attrs={'data-markdownfy-url': reverse_lazy('organization_preview')})}
         if HeavySelect2MultipleWidget is not None:
@@ -758,9 +759,26 @@ class ContestForm(ModelForm):
         help_text=_('Create new accounts based on members of this organization.'),
     )
 
+    exam_rooms = forms.ModelMultipleChoiceField(
+        queryset=Room.objects.all(),
+        required=False,
+        label=_('Auto login'),
+        widget=Select2MultipleWidget(attrs={'style': 'width: 100%'}),
+        help_text=_(
+            'Users will be automatically logged in on assigned devices '
+            'and cannot log in from other devices during the contest.'
+        ),
+    )
+
+    room_user_map = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput()
+    )
+
     def __init__(self, *args, **kwargs):
         self.org_pk = org_pk = kwargs.pop('org_pk', None)
         self.user = kwargs.pop('user', None)
+        self.org_slug = kwargs.pop('org_slug', None)
         super(ContestForm, self).__init__(*args, **kwargs)
 
         # cannot use fields[].widget = ...
@@ -781,6 +799,7 @@ class ContestForm(ModelForm):
             if self.instance.tags.filter(name="exam").exists():
                 self.fields['is_exam'].initial = True
 
+            self.fields['exam_rooms'].initial = self.instance.exam_room.all()
         if not org_pk:
             self.fields.pop("is_exam", None)
             self.fields.pop("create_exam_accounts", None)
@@ -789,7 +808,7 @@ class ContestForm(ModelForm):
         cleaned_data = super().clean()
         start_time = cleaned_data.get('start_time')
         end_time = cleaned_data.get('end_time')
-
+        rooms = cleaned_data.get("exam_rooms")
         has_long_perm = self.user and self.user.has_perm('judge.long_contest_duration')
         if end_time and start_time and \
            (end_time - start_time).days > settings.VNOJ_CONTEST_DURATION_LIMIT and not has_long_perm:
@@ -797,6 +816,115 @@ class ContestForm(ModelForm):
                                         % settings.VNOJ_CONTEST_DURATION_LIMIT,
                                         'contest_duration_too_long')
         
+        if rooms and start_time and end_time:
+            total_devices = Device.objects.filter(
+                room__in=rooms,
+                is_active=True
+            ).count()
+
+            if total_devices == 0:
+                raise forms.ValidationError(
+                    _('No active devices found in the selected rooms.'),
+                    code='no_devices'
+                )
+
+            busy_qs = ContestSeat.objects.filter(
+                contest__start_time__lt=end_time,
+                contest__end_time__gt=start_time,
+            )
+            if self.instance and self.instance.pk:
+                busy_qs = busy_qs.exclude(contest=self.instance)
+
+            busy_device_ids = set(busy_qs.values_list('device_id', flat=True))
+
+            from collections import defaultdict
+            devices_by_room = defaultdict(list)
+            available_devices = Device.objects.filter(
+                room__in=rooms,
+                is_active=True
+            ).exclude(id__in=busy_device_ids).order_by("room__code", "hostname")
+
+            for d in available_devices:
+                devices_by_room[d.room_id].append(d)
+
+            empty_rooms = []
+            for room in rooms:
+                if not devices_by_room.get(room.id):
+                    empty_rooms.append(room.code)
+
+            if empty_rooms:
+                raise forms.ValidationError(
+                    _('The following rooms have no available devices in this time range: %(rooms)s')
+                    % {'rooms': ', '.join(empty_rooms)},
+                    code='rooms_no_devices'
+                )
+
+            room_user_map_raw = self.data.get('room_user_map')
+            if room_user_map_raw:
+                try:
+                    room_user_map = json.loads(room_user_map_raw)
+                except (json.JSONDecodeError, TypeError):
+                    room_user_map = {}
+
+                overloaded_rooms = []
+                for room_id_str, user_ids in room_user_map.items():
+                    try:
+                        room_id = int(room_id_str)
+                    except ValueError:
+                        continue
+
+                    n_users = len(user_ids)
+                    n_devices = len(devices_by_room.get(room_id, []))
+
+                    if n_devices == 0:
+                        continue  
+
+                    if n_users > n_devices:
+                        room_obj = next((r for r in rooms if r.id == room_id), None)
+                        room_name = room_obj.code if room_obj else str(room_id)
+                        overloaded_rooms.append(
+                            f"{room_name} ({n_users} users / {n_devices} devices)"
+                        )
+
+                if overloaded_rooms:
+                    raise forms.ValidationError(
+                        _('Not enough available devices: %(rooms)s')
+                        % {'rooms': ', '.join(overloaded_rooms)},
+                        code='too_many_users'
+                    )
+
+            else:
+                try:
+                    org_slug = self.org_slug
+                    if org_slug:
+                        organization = Organization.objects.get(slug=org_slug)
+                        is_private = self.data.get('is_private') == 'on'
+
+                        if is_private:
+                            private_ids = self.data.getlist('private_contestants')
+                            member_count = len(private_ids)
+                            print("is private member_count (from form data):", member_count)
+                        else:
+                            member_count = (
+                                organization.members
+                                .filter(is_unlisted=False)
+                                .exclude(user__is_staff=True)
+                                .count()
+                            )
+
+                        total_available = sum(len(v) for v in devices_by_room.values())
+
+                        if total_available < member_count:
+                            raise forms.ValidationError(
+                                _('Not enough available devices: %(available)d available, %(members)d members.')
+                                % {'available': total_available, 'members': member_count},
+                                code='not_enough_devices'
+                            )
+                except Organization.DoesNotExist:
+                    raise forms.ValidationError(
+                        _('Organization does not exist'),
+                        code='organization_not_exist'
+                    )
         return cleaned_data
 
 

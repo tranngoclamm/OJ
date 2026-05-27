@@ -14,6 +14,7 @@ from judge.admin.submission import SubmissionAdmin
 from judge.admin.tag import TagAdmin, TagGroupAdmin, TagProblemAdmin
 from judge.admin.taxon import ProblemGroupAdmin, ProblemTypeAdmin
 from judge.admin.ticket import TicketAdmin
+from judge.admin.device import DeviceAdmin, RoomAdmin, ContestSeatAdmin
 from judge.models import Badge, BlogPost, Comment, CommentLock, Contest, ContestParticipation, \
     ContestTag, Judge, Language, License, MiscConfig, NavigationBar, Organization, \
     OrganizationRequest, Problem, ProblemGroup, ProblemType, Profile, Submission, Tag, \

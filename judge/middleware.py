@@ -1,9 +1,10 @@
 import base64
+import os
 import hmac
 import re
 import struct
-from urllib.parse import quote
 
+from urllib.parse import quote
 from django.conf import settings
 from django.contrib import auth
 from django.contrib.auth.models import User
@@ -17,6 +18,7 @@ from requests.exceptions import HTTPError
 
 from judge.ip_auth import IPBasedAuthBackend
 from judge.models import MiscConfig, Organization
+from django.utils.translation import get_language
 
 try:
     import uwsgi
@@ -46,6 +48,9 @@ class DMOJLoginMiddleware(object):
     def __call__(self, request):
         # Don't require user to change their password in contest mode
         request.official_contest_mode = settings.VNOJ_OFFICIAL_CONTEST_MODE
+        request.maintenance = settings.MAINTENANCE[0]
+        request.maintenance_time = settings.MAINTENANCE[1]
+        request.maintenance_allowed_users = settings.MAINTENANCE_ALLOWED_USERS
         if request.user.is_authenticated:
             profile = request.profile = request.user.profile
             if uwsgi:
@@ -82,10 +87,14 @@ class IPBasedAuthMiddleware:
         return self.get_response(request)
 
     def process_request(self, request):
+        if request.path.startswith('/impersonate/'):
+            return
+
         ip = request.META.get(settings.IP_BASED_AUTHENTICATION_HEADER, '')
         if ip == '':
             # Header doesn't exist, logging out
             if request.user.is_authenticated:
+                request.ip_auth_failed = True
                 self.logout(request)
             return
 
@@ -95,6 +104,7 @@ class IPBasedAuthMiddleware:
                 return
 
             # The associated IP address doesn't match the header, logging out
+            request.ip_auth_failed = True
             self.logout(request)
 
         # Switch to the user associated with the IP address
@@ -139,8 +149,14 @@ class ContestMiddleware(object):
             profile.update_contest()
             request.participation = profile.current_contest
             request.in_contest = request.participation is not None
+            request.in_exam_contest = (
+                request.participation is not None
+                and request.participation.contest.tags.filter(name="exam").exists()
+            )
+
         else:
             request.in_contest = False
+            request.in_exam_contest = False
             request.participation = None
         return self.get_response(request)
 
@@ -251,7 +267,6 @@ class OrganizationSubdomainMiddleware(object):
             response.context_data['logo_override_image'] = request.organization.logo_override_image
         return response
 
-
 class SEBMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
@@ -259,7 +274,62 @@ class SEBMiddleware:
     def __call__(self, request):
 
         request.is_seb = bool(
-            request.headers.get('X-SafeExamBrowser-ConfigKeyHash')
+            request.headers.get('X-SafeExamBrowser-RequestHash')
         )
+
+        return self.get_response(request)
+
+class ContestDeviceRestrictionMiddleware:
+    EXEMPT_PATHS = (
+        '/device-logout/',
+        '/accounts/logout',
+        '/static/',
+        '/media/',
+        '/api/',
+    )
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+
+        # chỉ check khi đã login
+        if request.user.is_authenticated:
+            if any(request.path.startswith(p) for p in self.EXEMPT_PATHS):
+                return self.get_response(request)
+
+            from django.utils import timezone
+            from judge.models import ContestSeat
+
+            now = timezone.now()
+
+            # check user có đang thi không
+            contest_seat = (
+                ContestSeat.objects
+                .select_related("device", "contest")
+                .filter(
+                    user__user=request.user,
+                    contest__start_time__lte=now,
+                    contest__end_time__gt=now
+                )
+                .order_by("-contest__start_time")
+                .first()
+            )
+
+            if contest_seat and contest_seat.device:
+                backend = request.session.get('_auth_user_backend')
+
+                if backend != 'judge.auth_backends.AutoLoginBackend':
+                    # return render(request, 'errors/device-forbidden.html', status=403)
+                    lang = get_language()
+                    if lang == "vi":
+                        template_ui = "device-forbidden_vi.html"
+                    else:
+                        template_ui = "device-forbidden.html"
+
+                    html_path = os.path.join(settings.BASE_DIR, 'templates', 'errors', template_ui)
+                    with open(html_path, 'r', encoding='utf-8') as f:
+                        html_content = f.read()
+                    return HttpResponse(html_content, status=403, content_type='text/html')
 
         return self.get_response(request)

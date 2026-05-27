@@ -9,7 +9,9 @@ from reversion.admin import VersionAdmin
 from judge.models import Profile, WebAuthnCredential
 from judge.utils.views import NoBatchDeleteMixin
 from judge.widgets import AdminAceWidget, AdminMartorWidget, AdminSelect2MultipleWidget, AdminSelect2Widget
-
+from django.contrib.sessions.models import Session
+from django.utils import timezone
+from django.core.cache import caches
 
 class ProfileForm(ModelForm):
     def __init__(self, *args, **kwargs):
@@ -161,7 +163,37 @@ class ProfileAdmin(NoBatchDeleteMixin, VersionAdmin):
 
 
 class UserAdmin(OldUserAdmin):
+    actions = ['force_logout_users']
+
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         if not change:
             Profile.objects.create(user=obj)
+
+    def delete_user_sessions(self, user):
+        sessions = Session.objects.filter(expire_date__gte=timezone.now())
+        count = 0
+        cache = caches['default']
+        for session in sessions:
+            data = session.get_decoded()
+            if data.get('_auth_user_id') == str(user.id):
+                cache_key = "django.contrib.sessions.cached_db" + session.session_key
+                cache.delete(cache_key)
+                session.delete()
+                count += 1
+
+        return count
+
+    def force_logout_users(self, request, queryset):
+        total_sessions = 0
+
+        for user in queryset:
+            total_sessions += self.delete_user_sessions(user)
+
+        self.message_user(
+            request,
+            f"Successfully force logged out {queryset.count()} user(s). "
+            f"Removed {total_sessions} active session(s)."
+        )
+
+    force_logout_users.short_description = "Force logout"

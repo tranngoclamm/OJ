@@ -43,7 +43,7 @@ from judge.contest_format import ICPCContestFormat
 from judge.forms import ContestAnnouncementForm, ContestCloneForm, ContestDownloadDataForm, ContestForm, \
     ProposeContestProblemFormSet
 from judge.models import Contest, ContestAnnouncement, ContestMoss, ContestParticipation, ContestProblem, ContestTag, \
-    Language, Organization, Problem, ProblemClarification, Profile, Submission
+    Language, Organization, Problem, ProblemClarification, Profile, Submission, Device, ContestSeat
 from judge.tasks import on_new_contest, prepare_contest_data, run_moss
 from judge.utils.celery import redirect_to_task_status, task_status_by_id, task_status_url_by_id
 from judge.utils.cms import parse_csv_ranking
@@ -55,7 +55,8 @@ from judge.utils.views import DiggPaginatorMixin, QueryStringSortMixin, SingleOb
     add_file_response, generic_message
 from judge.views.register import RegistrationForm
 from judge.views.seb import SEBRequiredMixin
-
+from django.contrib import messages
+from django.db.models import Exists, OuterRef
 
 __all__ = ['ContestList', 'ContestDetail', 'ContestRanking', 'ContestJoin', 'ContestLeave', 'ContestCalendar',
            'ContestClone', 'ContestStats', 'ContestMossView', 'ContestMossDelete',
@@ -112,7 +113,11 @@ class ContestList(QueryStringSortMixin, DiggPaginatorMixin, TitleMixin, ContestL
         return timezone.now()
 
     def _get_queryset(self):
-        return super().get_queryset().prefetch_related('tags', 'organizations', 'authors', 'curators', 'testers')
+        return super().get_queryset().prefetch_related('tags', 'organizations', 'authors', 'curators', 'testers').annotate(
+            has_rooms=Exists(
+                Contest.exam_room.through.objects.filter(contest_id=OuterRef('pk'))
+            )
+        )
 
     def get_queryset(self):
         self.search_query = None
@@ -240,6 +245,8 @@ class ContestMixin(object):
             context['logo_override_image'] = self.object.organizations.first().logo_override_image
 
         context['is_ICPC_format'] = (self.object.format.name == ICPCContestFormat.name)
+        context['contest_has_rooms'] = self.object.exam_room.filter(code__isnull=False).exists()
+
         return context
 
     def get_object(self, queryset=None):
@@ -582,6 +589,11 @@ class ContestJoin(LoginRequiredMixin, SEBRequiredMixin, ContestMixin, SingleObje
             return generic_message(request, _('Banned from joining'),
                                    _('You have been declared persona non grata for this contest. '
                                      'You are permanently barred from joining this contest.'))
+
+        is_privileged = request.user.is_staff or request.user.is_superuser or self.is_editor or self.is_tester
+        if request.is_seb and request.in_exam_contest and not request.profile.current_contest.finished_at and not is_privileged:
+            return generic_message(request, _('Contest join failed.'),
+                                   _('You must end the exam in "%s" before joining this contest.') % request.participation.contest.name)
 
         # Conditions for joining a contest:
         #   - If contest has ended, allow virtual joining iff:
@@ -1261,6 +1273,7 @@ class ContestTagDetail(TitleMixin, ContestTagDetailAjax):
     def get_title(self):
         return _('Contest tag: %s') % self.object.name
 
+
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
 from docx import Document
@@ -1273,6 +1286,7 @@ def random_upper(length):
 from io import BytesIO
 from django.http import HttpResponse
 from copy import deepcopy 
+# from judge.models.exam_access import ExamAccess
 from django.http import FileResponse
 
 import threading
@@ -1321,6 +1335,30 @@ def export_accounts_to_docx(account_list, filename_prefix):
 
     return file_path
 
+def export_accounts_to_docx_with_devices(device_mapping, filename_prefix):
+    doc = Document()
+    doc.add_heading(f'Danh sách tài khoản + máy thi {filename_prefix}', level=1)
+
+    table = doc.add_table(rows=1, cols=2)
+    table.style = 'Table Grid'
+
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = 'Tài khoản'
+    hdr_cells[1].text = 'Máy (hostname)'
+
+    for username_display, hostname in device_mapping:
+        row_cells = table.add_row().cells
+        row_cells[0].text = username_display
+        row_cells[1].text = hostname
+
+    filename = f'{datetime.now().strftime("%Y%m%d")}_{filename_prefix}_devices.docx'
+    file_path = os.path.join(settings.MEDIA_ROOT, 'exports', filename)
+
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    doc.save(file_path)
+
+    return file_path
+
 class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
     template_name = 'contest/create.html'
     model = Contest
@@ -1331,6 +1369,7 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
+        kwargs['org_slug'] = self.kwargs.get('slug')
         return kwargs
 
     def get_title(self):
@@ -1347,21 +1386,39 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
     def get_context_data(self, **kwargs):
         data = super().get_context_data(**kwargs)
         data['contest_problem_formset'] = self.get_contest_problem_formset()
+        if hasattr(self, "organization") and self.organization:
+            data["users_json"] = json.dumps([
+                {
+                    "id": m.id,
+                    "name": f"{m.user.username} ({m.user.first_name})"
+                }
+                for m in self.organization.members.all()
+                    .filter(is_unlisted=False)
+                    .exclude(user__is_staff=True)
+                    .select_related("user")
+            ])
+        else:
+            data["users_json"] = json.dumps([])
+
         return data
 
     def save_contest_form(self, form):
-        self.object = form.save()
-        self.object.authors.add(self.request.profile)
+        self.object = form.save(commit=False)   # BẮT BUỘC
+
         self.object.save()
+        form.save_m2m()  
+        rooms = form.cleaned_data.get("exam_rooms")
+        if rooms:
+            self.object.exam_room.set(rooms)
+
+        self.object.authors.add(self.request.profile)
 
     def post(self, request, *args, **kwargs):
         self.object = None
         post_data = request.POST.copy()
         is_exam = post_data.pop('is_exam', False)
-        # organization_id = post_data.pop('exam_organization', [None])[0]
         create_accounts = post_data.pop('create_exam_accounts', False)
-        # auto_export = post_data.pop('auto_export', False)
-        form = ContestForm(post_data, instance=self.object)
+        form = ContestForm(post_data, instance=self.object, org_slug=self.kwargs.get('slug'))
         form_set = self.get_contest_problem_formset()
 
         if form.is_valid() and form_set.is_valid():
@@ -1375,23 +1432,20 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
             on_new_contest.delay(self.object.key)
 
             if is_exam:
-                tag, created = ContestTag.objects.get_or_create(name="exam")
+                tag, created = ContestTag.objects.get_or_create(
+                    name="exam",
+                    defaults={'color': '#ea2f2e'}
+                )
                 self.object.tags.add(tag)
 
-            # if auto_export:
-            #     schedule_auto_export.delay(self.object.id)
 
             if create_accounts and is_exam:
                 try:
-                    # organization = Organization.objects.get(pk=organization_id)
-                    # organization = Organization.objects.get(pk=self.kwargs['org_pk'])
                     organization = Organization.objects.get(slug=self.kwargs['slug'])       
                     self.object.organizations.add(organization)
                     problems = list(self.object.problems.all())
-                    # members = list(organization.members.filter(is_unlisted=False).select_related('user'))
                     members = list(organization.members.filter(is_unlisted=False).exclude(user__username__regex=r'^[A-Z]{4}_').select_related('user'))
                     base_usernames = [m.user.username for m in members if not m.user.is_staff]
-                    # print("1451", members)
                     random_prefixes = [random_upper(4) for _ in base_usernames]
                     new_usernames = [f"{prefix}_{username}" for prefix, username in zip(random_prefixes, base_usernames)]
                     existing_usernames = set(get_user_model().objects.filter(username__in=new_usernames).values_list('username', flat=True))
@@ -1446,10 +1500,132 @@ class CreateContest(PermissionRequiredMixin, TitleMixin, CreateView):
                 except Organization.DoesNotExist:
                     print("[ERROR] Không tìm thấy tổ chức.")
                     organization = None
+
+            rooms = form.cleaned_data.get("exam_rooms")
+
+            if rooms and is_exam:
+                room_user_map_raw = request.POST.get("room_user_map")
+                room_user_map = {}
+
+                if room_user_map_raw:
+                    try:
+                        room_user_map = json.loads(room_user_map_raw)
+                    except Exception:
+                        room_user_map = {}
+
+                contest_seats = []
+                export_mapping = []
+
+                # flatten user đã được map
+                mapped_user_ids = set()
+                for room_id, user_ids in room_user_map.items():
+                    mapped_user_ids.update(map(int, user_ids))
+
+                from collections import defaultdict
+                devices_by_room = defaultdict(list)
+                from django.utils import timezone as tz
+                now_start = self.object.start_time
+                now_end = self.object.end_time
+
+                busy_device_ids = ContestSeat.objects.filter(
+                    contest__start_time__lt=now_end,
+                    contest__end_time__gt=now_start,
+                    device__isnull=False 
+                ).exclude(
+                    contest=self.object
+                ).values_list('device_id', flat=True)
+
+                available_devices = list(
+                    Device.objects.filter(
+                        room__in=rooms,
+                        is_active=True
+                    ).exclude(
+                        id__in=busy_device_ids
+                    ).order_by("room__code", "hostname")
+                )
+                for d in available_devices:
+                    devices_by_room[d.room_id].append(d)
+
+                organization = Organization.objects.get(slug=self.kwargs['slug'])
+                self.object.organizations.add(organization)
+
+                if self.object.is_private:
+                    members = list(
+                        self.object.private_contestants
+                        .filter(is_unlisted=False)
+                        .exclude(user__is_staff=True)
+                        .exclude(user=self.request.user)
+                        .select_related('user')
+                    )
+                else:
+                    members = list(
+                        organization.members
+                        .filter(is_unlisted=False)
+                        .exclude(user__is_staff=True)
+                        .exclude(user=self.request.user)
+                        .select_related('user')
+                    )
+
+                if room_user_map:
+                    for room_id, user_ids in room_user_map.items():
+                        for uid in user_ids:
+                            found = any(m.id == int(uid) for m in members)
+                        room_id = int(room_id)
+                        users_in_room = [m for m in members if m.id in map(int, user_ids)]
+
+                        devices = devices_by_room.get(room_id, [])
+
+                        if not devices:
+                            continue
+
+                        step = max(1, len(devices) // max(1, len(users_in_room)))
+                        selected = devices[::step][:len(users_in_room)]
+
+                        for member, device in zip(users_in_room, selected):
+                            contest_seats.append(ContestSeat(
+                                contest=self.object,
+                                user=member,
+                                device=device
+                            ))
+
+                            export_mapping.append((
+                                f"{member.user.username} ({member.user.first_name})",
+                                device.hostname
+                            ))
+
+                    ContestSeat.objects.bulk_create(contest_seats)
+
+                else:        
+                    try:
+                        if len(available_devices) < len(members):
+                            raise Exception(
+                                f"Not enough available devices: {len(available_devices)} available, {len(members)} members"
+                            )
+
+                        step = max(1, len(available_devices) // len(members))
+                        selected_devices = available_devices[::step][:len(members)]
+                        contest_seats = []
+                        export_mapping = []
+
+                        for member, device in zip(members, selected_devices):
+                            contest_seats.append(ContestSeat(
+                                contest=self.object,
+                                user=member,
+                                device=device
+                            ))
+                            export_mapping.append((
+                                f"{member.user.username} ({member.user.first_name})",
+                                device.hostname
+                            ))
+
+                        ContestSeat.objects.bulk_create(contest_seats)
+                    except Organization.DoesNotExist:
+                        print("[ERROR] Không tìm thấy tổ chức.")
+ 
             return HttpResponseRedirect(self.get_success_url())
         else:
             return self.render_to_response(self.get_context_data(*args, **kwargs))
-    
+
     def dispatch(self, request, *args, **kwargs):
         try:
             return super().dispatch(request, *args, **kwargs)
@@ -1626,7 +1802,7 @@ class ContestDownloadData(ContestDataMixin, SingleObjectMixin, View):
         response['Content-Type'] = 'application/zip'
         response['Content-Disposition'] = 'attachment; filename=%s-data.zip' % self.object.key
         return response
-    
+
 class ContestEndExam(LoginRequiredMixin, ContestMixin, SingleObjectMixin, View):
     def dispatch(self, request, *args, **kwargs):
         if request.method != 'POST':
@@ -1646,3 +1822,141 @@ class ContestEndExam(LoginRequiredMixin, ContestMixin, SingleObjectMixin, View):
         participation.finished_at = timezone.now()
         participation.save()
         return HttpResponseRedirect('/quit_seb')
+
+class ContestDevices(ContestMixin, TitleMixin, TemplateView):
+    template_name = 'contest/devices.html'
+
+    def get_title(self):
+        return _('%s Devices') % self.object.name
+
+    @cached_property
+    def can_edit(self):
+        return self.object.is_editable_by(self.request.user)
+
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+
+        if not self.can_edit:
+            raise PermissionDenied()
+
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_object(self):
+        return get_object_or_404(Contest, key=self.kwargs['contest'])
+        
+    @cached_property
+    def seats(self):
+        return (
+            ContestSeat.objects
+            .filter(contest=self.object)
+            .select_related('user__user', 'device__room')
+            .order_by('device__hostname')
+        )
+
+    @cached_property
+    def devices(self):
+        return Device.objects.filter(
+            room__in=self.object.exam_room.all(),
+            is_active=True
+        ).select_related('room').order_by('hostname')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if self.request.user.is_authenticated:
+            try:
+                context['live_participation'] = (
+                    self.request.profile.contest_history.get(
+                        contest=self.object,
+                        virtual=ContestParticipation.LIVE,
+                    )
+                )
+            except ContestParticipation.DoesNotExist:
+                context['live_participation'] = None
+                context['has_joined'] = False
+            else:
+                context['has_joined'] = True
+        else:
+            context['live_participation'] = None
+            context['has_joined'] = False
+
+        context['contest'] = self.object
+        context['seats'] = self.seats
+        context['devices'] = self.devices
+        context['can_edit'] = self.can_edit
+        context['now'] = self.object._now
+        context["devices_map"] = {}
+
+        busy_device_ids = set(
+            ContestSeat.objects
+            .filter(
+                contest__start_time__lt=self.object.end_time,
+                contest__end_time__gt=self.object.start_time,
+                device__isnull=False,
+            )
+            .exclude(contest=self.object)
+            .exclude(contest__end_time=self.object.start_time)
+            .exclude(contest__start_time=self.object.end_time)
+            .values_list("device_id", flat=True)
+        )
+        current_contest_seat_device_ids = {
+            seat.device_id for seat in self.seats if seat.device_id
+        }
+
+        for seat in self.seats:
+            occupied_by_others = (
+                busy_device_ids | (current_contest_seat_device_ids - {seat.device_id})
+            )
+            context["devices_map"][seat.id] = self.devices.exclude(
+                id__in=occupied_by_others
+            )
+
+        return context
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+
+        seat_id = request.POST.get("seat_id")
+        device_id = request.POST.get("device_id")
+
+        try:
+            seat = ContestSeat.objects.get(id=seat_id, contest=self.object)
+
+            if device_id:
+                # validate device
+                if not Device.objects.filter(
+                    id=device_id,
+                    room__in=self.object.exam_room.all(),
+                    is_active=True
+                ).exists():
+                    raise Exception("Invalid device")
+
+                exists = ContestSeat.objects.filter(
+                    contest=self.object,
+                    device_id=device_id
+                ).exclude(id=seat.id).exists()
+
+                if exists:
+                    raise Exception("This device is already assigned to another user.")
+                
+                conflict = ContestSeat.objects.filter(
+                    device_id=device_id,
+                    contest__start_time__lt=self.object.end_time,
+                    contest__end_time__gt=self.object.start_time,
+                ).exclude(contest=self.object).exists()
+
+                if conflict:
+                    raise Exception("Device is already used in another overlapping contest")
+
+                seat.device_id = device_id
+                seat.updated_at = timezone.now()
+            else:
+                seat.device = None
+                seat.updated_at = timezone.now()
+
+            seat.save()
+
+        except Exception as e:
+            # print("[DEVICE UPDATE ERROR]", e)
+            messages.error(request, str(e)) 
+
+        return redirect('contest_device', contest=self.object.key)
