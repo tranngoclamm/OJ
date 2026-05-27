@@ -15,14 +15,14 @@ from judge.models import Language, Profile, Organization
 
 ALPHABET = string.ascii_letters + string.digits
 
-
 def generate_password():
-    return ''.join(secrets.choice(ALPHABET) for _ in range(8))
+    alphabet = ALPHABET.replace('l', '')
+    return ''.join(secrets.choice(alphabet) for _ in range(8))
 
 
-def add_user(username, fullname, email, password):
+def add_user(username, fullname, password):
 
-    user = User(username = username, email = email, first_name = fullname, is_active = True)
+    user = User(username = username, first_name = fullname, is_active = True)
     user.set_password(password)
     user.save()
 
@@ -33,7 +33,7 @@ def add_user(username, fullname, email, password):
 def add_org(username, organization):
     user = User.objects.get(username = username)
     profile = Profile.objects.get(user = user)
-    organization = Organization.objects.get(short_name = organization) 
+    organization = Organization.objects.get(short_name = organization)
     if organization not in profile.organizations.all():
         profile.organizations.add(organization)
         print(f"Organization {organization.name} added to profile for user {username}.")
@@ -67,6 +67,7 @@ def is_positive_integer(input_str):
     return False
 class Command(BaseCommand):
     help = 'batch create users'
+
     def add_arguments(self, parser):
         parser.add_argument('input', help='csv file containing username and fullname')
         parser.add_argument('output', help='where to store output csv file')
@@ -91,51 +92,96 @@ class Command(BaseCommand):
 
                     csv_reader = csv.reader(fin)
                     data = [row for row in csv_reader]
+                    username_admin = "dungpt"
 
                     row = 4
                     # while (str(data[row][0]) != "admin"):
                     #     row += 1
-                    username_admin = 'dungpt'
-                    # row += 1
-                    name_organization = str(data[row][0])
+                    
+                    # while (str(data[row][0]) != "name"):
+                    #     row += 1
+                    ten_mon = str(data[row][0]).split(":")[1].strip()
+                    print(ten_mon)
+                    row = 6
+                    s_mot = str(data[row][0])
+                    parts = [p.strip() for p in s_mot.split("  ") if ":" in p]
+                    data_mot = {}
+                    for p in parts:
+                        key, value = p.split(":", 1)
+                        data_mot[key.strip()] = value.strip()
+
+                    ngay_thi = data_mot.get("Ngày thi").strip()
+                    ca_thi = data_mot.get("Ca thi").strip()
+                    phong_thi = data_mot.get("Phòng thi").strip()
+                    print(ngay_thi)
+                    print(ca_thi)
+                    print(phong_thi)
+
+                    name_organization = "TKTPH " + ten_mon + " " + ngay_thi + " " + ca_thi
+
                     slug = normalize_string(name_organization)
-                    print("Creating org...")
+                
                     if Organization.objects.filter(name = name_organization).exists():
                         print (name_organization + " already exists!")
                     else:
-                        org = Organization(name = name_organization, slug = slug, short_name = slug, about = name_organization, is_open = 0, is_unlisted = 0, is_official = 1)
+                        org = Organization(name = name_organization, slug = slug, short_name = slug, about = name_organization, is_open = 0, is_unlisted = 1, is_official = 1)
                         
                         user_admin = User.objects.get(username = username_admin)
                         
                         profile_admin = Profile.objects.get(user = user_admin)
-                        
                         org.save()
                         org.admins.add(profile_admin)
                 
-                    while (str(data[row][0]) != "STT"):
+                    while (str(data[row][0]) != "TT"):
                         row += 1
-                    for row in range(row + 1, len(data)):
-                        username = str(data[row][2])
+                    row += 2
+                    while (str(data[row][0]).isdigit() == True):
+                        username = "THI_" + str(data[row][2])
                         fullname = str(data[row][3]) + " " + str(data[row][4])
-                        email = str(data[row][7])
                         password = generate_password()
-
+                        
                         if User.objects.filter(username = username).exists():
                             print(username + " already exists!")
                             user = User.objects.get(username = username)
-                            if (user.email == ""):
-                                print(username + " add email " + email)
-                                user.email = email
-                                user.save()
+                            user.set_password(password)
+                            if (user.email != ""):
+                                user.email = ""
+                            user.save()
                             # profile = Profile.objects.get(user = user) // ???
 
                         else:
-                            add_user(username, fullname, email, password)
-                            writer.writerow({
-                                'username': username,
-                                'fullname': fullname,
-                                'password': password,
-                            })
+                            add_user(username, fullname, password)
+
                         add_org(username, slug)
+                        writer.writerow({
+                            'username': username,
+                            'fullname': fullname,
+                            'password': password,
+                        })
+                        row += 1
+                        
+                    for i in range(1, 3):
+                        username = "THI_" + normalize_string(phong_thi) + "_" + str(i)
+                        fullname = username
+                        password = generate_password()
+                        
+                        if User.objects.filter(username = username).exists():
+                            print(username + " already exists!")
+                            user = User.objects.get(username = username)
+                            user.set_password(password)
+                            if (user.email != ""):
+                                user.email = ""
+                            user.save()
+                            # profile = Profile.objects.get(user = user) // ???
+
+                        else:
+                            add_user(username, fullname, password)
+
+                        add_org(username, slug)
+                        writer.writerow({
+                            'username': username,
+                            'fullname': fullname,
+                            'password': password,
+                        })
                     fin.close()
                     fout.close()
